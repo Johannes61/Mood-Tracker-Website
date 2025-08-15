@@ -68,6 +68,15 @@
       </div>
       <div class="hud">
         <div class="pill" id="currentTop">Top mood: —</div>
+        <div style="display:flex; gap:8px; align-items:center">
+          <select id="deviceSelect" title="Choose camera" style="background:linear-gradient(180deg,#1a2550,#121b3b);border:1px solid #2b365e;color:var(--ink);padding:8px 10px;border-radius:10px">
+            <option>Loading cameras…</option>
+          </select>
+          <button id="startBtn" class="btn" title="(Re)start camera">Start</button>
+          <button id="flipBtn" class="btn" title="Flip camera">Flip</button>
+          <button id="snapBtn" class="btn" title="Save snapshot">Save PNG</button>
+        </div>
+      </div>
         <div style="display:flex; gap:8px">
           <button id="flipBtn" class="btn" title="Flip camera">Flip</button>
           <button id="snapBtn" class="btn" title="Save snapshot">Save PNG</button>
@@ -109,10 +118,13 @@
   const currentTop = document.getElementById('currentTop');
   const flipBtn = document.getElementById('flipBtn');
   const snapBtn = document.getElementById('snapBtn');
+  const startBtn = document.getElementById('startBtn');
+  const deviceSelect = document.getElementById('deviceSelect');
 
   // ====== STATE ======
   let stream;
-  let usingFront = true; // try user-facing first
+  let usingFront = true;
+  let currentDeviceId = null; // try user-facing first
   let chart;
   const historyLen = 120; // ~ last 60s if sampling ~500ms
   const history = EXPRESSIONS.reduce((acc,k)=>{acc[k]=Array(historyLen).fill(0);return acc;},{});
@@ -131,17 +143,24 @@
   }
 
   // ====== Camera control ======
-  async function startCamera(){
+  async function startCamera(deviceId){
     if(stream){ stream.getTracks().forEach(t=>t.stop()); }
-    const constraints = { audio:false, video:{ facingMode: usingFront? 'user':'environment', width:{ideal: 960}, height:{ideal: 540} } };
+    const videoConstraints = deviceId ? {deviceId: {exact: deviceId}} : { facingMode: usingFront? 'user':'environment', width:{ideal: 960}, height:{ideal: 540} };
+    const constraints = { audio:false, video: videoConstraints };
     stream = await navigator.mediaDevices.getUserMedia(constraints);
     video.srcObject = stream;
     await new Promise(r=> video.onloadedmetadata = r);
-    // resize overlay to video
+    await video.play();
     overlay.width = video.videoWidth; overlay.height = video.videoHeight;
+    const track = stream.getVideoTracks()[0];
+    const settings = track && track.getSettings ? track.getSettings() : {};
+    currentDeviceId = settings.deviceId || deviceId || null;
+    startBtn.disabled = true;
   }
 
   flipBtn.onclick = async()=>{ usingFront = !usingFront; await startCamera(); };
+  startBtn.onclick = async()=>{ try{ await startCamera(currentDeviceId || undefined); setStatus(true,'Live'); }catch(e){ handleCameraError(e);} };
+  deviceSelect.onchange = async()=>{ const id = deviceSelect.value; if(id && id !== 'null'){ try{ await startCamera(id); }catch(e){ handleCameraError(e);} } };
 
   snapBtn.onclick = ()=>{
     const snap = document.createElement('canvas');
@@ -175,6 +194,26 @@
           x:{ ticks:{display:false}, grid:{display:false}, border:{display:false} },
           y:{ min:0, max:1, ticks:{display:false}, grid:{color:'#2b365e33'}, border:{display:false} }
         }
+      }
+    });
+  }
+  
+  async function listCameras(){
+    try{
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cams = devices.filter(d=>d.kind==='videoinput');
+      deviceSelect.innerHTML = '';
+      cams.forEach((c,idx)=>{
+        const opt = document.createElement('option');
+        opt.value = c.deviceId || '';
+        opt.textContent = c.label || `Camera ${idx+1}`;
+        deviceSelect.appendChild(opt);
+      });
+      if(cams.length===0){
+        const opt = document.createElement('option'); opt.textContent='No cameras found'; opt.value='null'; deviceSelect.appendChild(opt);
+      }
+    }catch(err){ console.warn('enumerateDevices failed', err); }
+  }
       }
     });
   }
@@ -220,6 +259,7 @@
 
   // ====== Detection loop ======
   async function detectLoop(){
+    if(!stream){ setTimeout(()=>requestAnimationFrame(detectLoop), 200); return; }
     if(video.readyState >= 2){
       const result = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({scoreThreshold:0.5}))
         .withFaceLandmarks()
@@ -261,14 +301,16 @@
     makeBars();
     initChart();
 
-    // Permissions & camera
-    try{ await startCamera(); } catch(e){
-      alert('Camera permission denied or unavailable.');
-      setStatus(false, 'Camera blocked');
-      return;
+    await listCameras();
+    startBtn.disabled = false;
+
+    try{
+      await startCamera();
+    } catch(e){
+      handleCameraError(e);
+      // user can press Start after fixing
     }
 
-    // Load models
     setStatus(false, 'Loading models…');
     await Promise.all([
       faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
@@ -278,6 +320,17 @@
 
     setStatus(true, 'Models ready');
     detectLoop();
+  }
+
+  function handleCameraError(e){
+    console.warn('Camera error', e);
+    let msg = 'Camera blocked';
+    if(e && e.name === 'NotAllowedError') msg = 'Camera permission denied. Click the lock icon in the address bar → allow camera, then press Start.';
+    else if(e && e.name === 'NotFoundError') msg = 'No camera found. Plug one in or select a different device.';
+    else if(e && e.name === 'NotReadableError') msg = 'Camera is in use by another app. Close it and press Start.';
+    else if(e && e.message) msg = e.message;
+    setStatus(false, msg);
+    startBtn.disabled = false;
   }
 
   // PWA-ish offline cache (very small & optional)
