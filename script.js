@@ -1,1434 +1,2238 @@
-class WalletManager {
-    constructor() {
-        // Define TOKEN_PROGRAM_ID
-        this.TOKEN_PROGRAM_ID = new solanaWeb3.PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
-        
-        // Initialize SPL Token program
-        this.TOKEN_PROGRAM = solanaWeb3.Token;
-        
-        // Use Helius RPC endpoint with API key
-        this.rpcEndpoints = {
-            mainnet: [
-                'https://mainnet.helius-rpc.com/?api-key=2cc2a540-0712-4bd3-aaf8-806470e42cf6',
-                'https://api.mainnet-beta.solana.com'
-            ]
-        };
-        
-        this.currentNetwork = 'mainnet';
-        this.connection = null;
-        this.publicKey = null;
-        this.initializeConnection();
-        this.walletProviders = {
-            phantom: {
-                name: 'Phantom',
-                icon: 'https://phantom.app/img/logo.png',
-                url: 'https://phantom.app/',
-                adapter: window?.phantom?.solana,
-                connect: async () => {
-                    if (!window?.phantom?.solana) {
-                        window.open('https://phantom.app/', '_blank');
-                        throw new Error('Please install Phantom wallet');
-                    }
-                    return window.phantom.solana.connect();
-                }
-            },
-            solflare: {
-                name: 'Solflare',
-                icon: 'https://solflare.com/assets/logo.svg',
-                url: 'https://solflare.com',
-                adapter: window?.solflare,
-                connect: async () => {
-                    try {
-                        if (!window?.solflare) {
-                            window.open('https://solflare.com', '_blank');
-                            throw new Error('Please install Solflare wallet');
-                        }
-                        const resp = await window.solflare.connect();
-                        return resp;
-                    } catch (error) {
-                        console.error('Solflare connection error:', error);
-                        throw error;
-                    }
-                }
-            },
-            backpack: {
-                name: 'Backpack',
-                url: 'https://backpack.app',
-                adapter: window?.backpack,
-                connect: async () => window?.backpack?.connect()
-            },
-            glow: {
-                name: 'Glow',
-                adapter: window?.glow
-            },
-            exodus: {
-                name: 'Exodus',
-                adapter: window?.exodus
-            },
-            coinbase: {
-                name: 'Coinbase',
-                adapter: window?.coinbaseWalletExtension
-            },
-            brave: {
-                name: 'Brave',
-                adapter: window?.braveSolana
-            },
-            slope: {
-                name: 'Slope',
-                adapter: window?.slope
-            },
-            math: {
-                name: 'Math Wallet',
-                adapter: window?.mathwallet
-            },
-            strike: {
-                name: 'Strike',
-                adapter: window?.strike
-            }
-        };
-        this.currentProvider = null;
-        this.rateLimitMap = new Map();
-        this.accountData = {
-            balance: 0,
-            abandonedAccounts: []
-        };
-        this.stats = {
-            activeUsers: Math.floor(Math.random() * 1000) + 5000, // Simulated stats
-            totalClaimed: (Math.random() * 100000).toFixed(2),
-            recentClaims: Math.floor(Math.random() * 100) + 50
-        };
+/* Dashboard container styling */
+.dashboard-container {
+    display: flex;
+    gap: 3rem;
+    width: calc(100% - 6rem);
+    margin: 3rem auto;
+    padding: 0 3rem;
+    height: calc(100vh - 160px);
+}
 
-        // Add Buffer polyfill
-        this.Buffer = (function() {
-            if (typeof window !== 'undefined' && window.Buffer) {
-                return window.Buffer;
-            }
-            return {
-                from: (arr) => Uint8Array.from(arr),
-                alloc: (size) => new Uint8Array(size)
-            };
-        })();
-    }
+/* Common section styles for Abandoned Accounts and Referral Program */
+.abandoned-accounts,
+.referral-section {
+    background: var(--card-color);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--card-radius);
+    padding: 2.5rem;
+    display: flex;
+    flex-direction: column;
+    position: relative; /* For positioning the Claim All button */
+}
 
-    async initializeConnection() {
-        const fallbackEndpoints = [
-            'https://mainnet.helius-rpc.com/?api-key=2cc2a540-0712-4bd3-aaf8-806470e42cf6',
-            'https://api.mainnet-beta.solana.com',
-            'https://solana-mainnet.g.alchemy.com/v2/your-api-key',
-            'https://rpc.ankr.com/solana'
-        ];
+/* Header styling */
+.accounts-header,
+.referral-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--glass-border);
+}
 
-        for (const endpoint of fallbackEndpoints) {
-            try {
-                this.connection = new solanaWeb3.Connection(endpoint, {
-                    commitment: 'confirmed',
-                    wsEndpoint: endpoint.replace('https', 'wss'),
-                    fetch: this.rateLimitedFetch.bind(this)
-                });
-                console.log('Connected to RPC:', endpoint);
-                return;
-            } catch (error) {
-                console.error('Connection failed for endpoint:', endpoint, error);
-            }
-        }
-        throw new Error('Failed to connect to any RPC endpoint');
-    }
+.accounts-header h2,
+.referral-header h2 {
+    color: var(--primary-color);
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin: 0;
+}
 
-    rateLimitedFetch(url, opts) {
-        const key = `${url}-${opts?.body}`;
-        const now = Date.now();
-        const lastRequest = this.rateLimitMap.get(key) || 0;
-        
-        if (now - lastRequest < 100) { // Minimum 100ms between requests
-            return new Promise(resolve => 
-                setTimeout(() => resolve(this.rateLimitedFetch(url, opts)), 100)
-            );
-        }
+/* Content areas */
+.accounts-list,
+.referral-content {
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 1rem;
+    margin-bottom: 2rem;
+}
 
-        this.rateLimitMap.set(key, now);
-        return fetch(url, {
-            ...opts,
-            headers: {
-                ...opts?.headers,
-                'Content-Type': 'application/json',
-            }
-        });
-    }
+/* Refresh button styling */
+.refresh-btn {
+    background: transparent;
+    border: none;
+    color: var(--primary-color);
+    cursor: pointer;
+    padding: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+}
+.refresh-btn:hover {
+    transform: rotate(180deg);
+}
+.refresh-btn i {
+    font-size: 1.2rem;
+}
 
-    async getBalance() {
-        if (!this.publicKey) return '0.0000';
+/* Abandoned Account Card Styling */
+.abandoned-account {
+    background: var(--surface-color);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--button-radius);
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: all 0.3s ease;
+}
+.abandoned-account:hover {
+    border-color: var(--primary-color);
+    transform: translateY(-2px);
+}
 
-        try {
-            const balance = await this.connection.getBalance(this.publicKey);
-            // Format balance to 4 decimal places
-            return (balance / solanaWeb3.LAMPORTS_PER_SOL).toFixed(4);
-        } catch (error) {
-            console.error('Error fetching balance:', error);
-            // Try fallback endpoint
-            try {
-                const fallbackRpc = new solanaWeb3.Connection(
-                    "https://solana-mainnet.rpc.extrnode.com",
-                    'confirmed'
-                );
-                const fallbackBalance = await fallbackRpc.getBalance(this.publicKey);
-                return (fallbackBalance / solanaWeb3.LAMPORTS_PER_SOL).toFixed(4);
-            } catch (fallbackError) {
-                console.error('Fallback balance fetch failed:', fallbackError);
-                return '0.0000';
-            }
-        }
-    }
+/* Account Info Styling */
+.account-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+.account-address {
+    color: var(--text-secondary);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.95rem;
+    font-weight: 500;
+}
+.account-balance {
+    color: var(--primary-color);
+    font-size: 1.1rem;
+    font-weight: 600;
+}
 
-    async detectWallets() {
-        const availableWallets = {};
-        
-        for (const [id, wallet] of Object.entries(this.walletProviders)) {
-            try {
-                // Check if wallet is injected
-                const adapter = typeof window !== 'undefined' && 
-                    window[id.toLowerCase()] ? 
-                    window[id.toLowerCase()] : 
-                    wallet.adapter;
+/* Individual Claim Button Styling */
+.btn-claim {
+    background: transparent;
+    border: none;
+    color: var(--primary-color);
+    cursor: pointer;
+    padding: 0.8rem;
+    font-size: 1.4rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    border-radius: 8px;
+}
+.btn-claim:hover {
+    transform: scale(1.1);
+}
+.btn-claim i {
+    font-size: 1.4rem;
+}
 
-                const isAvailable = !!adapter;
-                
-                if (isAvailable) {
-                    availableWallets[id] = {
-                        ...wallet,
-                        installed: true,
-                        isConnected: false
-                    };
+/* Claim All Button Container (positioned at the bottom) */
+.claim-all-container {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 1.5rem 2.5rem;
+    border-top: 1px solid var(--glass-border);
+    margin-top: auto;
+    background: transparent;
+}
+/* Claim All Button Styling */
+.claim-all-button {
+    width: 100%;
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: var(--button-radius);
+    padding: 12px 24px;
+    font-weight: 600;
+    font-size: 0.95rem;
+    letter-spacing: 0.2px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.8rem;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+.claim-all-button:hover {
+    background: var(--secondary-color);
+    transform: translateY(-1px);
+}
+.claim-all-button i {
+    font-size: 1.2rem;
+}
 
-                    // Check if wallet is already connected
-                    try {
-                        if (adapter.isConnected) {
-                            availableWallets[id].isConnected = true;
-                        }
-                    } catch (e) {
-                        console.warn(`Error checking connection for ${id}:`, e);
-                    }
-                } else {
-                    availableWallets[id] = {
-                        ...wallet,
-                        installed: false,
-                        isConnected: false
-                    };
-                }
-            } catch (error) {
-                console.warn(`Error detecting ${id}:`, error);
-                availableWallets[id] = {
-                    ...wallet,
-                    installed: false,
-                    isConnected: false
-                };
-            }
-        }
-        
-        return availableWallets;
-    }
+/* Referral Program Styling */
+/* Referral Link Container */
+.referral-link-container {
+    background: transparent !important;
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-top: 1rem;
+}
+.referral-link-input {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+.referral-link {
+    background: var(--surface-color);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--button-radius);
+    padding: 12px 16px;
+    color: var(--text-color);
+    font-family: 'JetBrains Mono', monospace;
+    flex: 1;
+    transition: all 0.3s ease;
+}
+.referral-link:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px var(--glow-color);
+}
+/* Copy Button within Referral */
+.copy-button {
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 0.8rem 1.2rem;
+    cursor: pointer;
+    white-space: nowrap;
+}
 
-    async connectWallet(providerId) {
-        console.log('Connecting wallet:', providerId);
-        const provider = this.walletProviders[providerId];
-        
-        if (!provider) {
-            throw new Error('Wallet provider not found');
-        }
+/* Referral Stats Styling */
+.referral-stats {
+    display: grid;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+.stat-card {
+    background: var(--surface-color);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--card-radius);
+    padding: 1.5rem;
+    transition: all 0.3s ease;
+}
+.stat-card:hover {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 20px var(--glow-color);
+}
+.stat-label {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin-bottom: 0.8rem;
+}
+.stat-value {
+    color: var(--primary-color);
+    font-size: 1.5rem;
+    font-weight: 600;
+}
 
-        try {
-            let wallet;
-            switch (providerId) {
-                case 'phantom':
-                    wallet = window?.phantom?.solana;
-                    break;
-                case 'solflare':
-                    wallet = window?.solflare;
-                    break;
-                case 'backpack':
-                    wallet = window?.backpack;
-                    break;
-                default:
-                    wallet = provider.adapter;
-            }
+/* Empty State Styling */
+.empty-state {
+    text-align: center;
+    padding: 3rem 2rem;
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    color: var(--text-secondary);
+    background: var(--surface-color);
+}
+.empty-state i {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+}
+.empty-state p {
+    font-size: 1.1rem;
+    opacity: 0.8;
+}
 
-            if (!wallet) {
-                window.open(provider.url, '_blank');
-                throw new Error(`Please install ${provider.name} wallet`);
-            }
-
-            const response = await wallet.connect();
-            console.log('Wallet connected:', response);
-            
-            this.currentProvider = wallet;
-            this.publicKey = response.publicKey || wallet.publicKey;
-            
-            return true;
-        } catch (error) {
-            console.error('Wallet connection error:', error);
-            throw error;
-        }
-    }
-
-    async findAbandonedAccounts() {
-        try {
-            if (!this.publicKey) return [];
-            
-            // Use the correct method for web3.js v2
-            const accounts = await this.connection.getParsedTokenAccountsByOwner(
-                this.publicKey,
-                {
-                    programId: this.TOKEN_PROGRAM_ID
-                }
-            );
-
-            // No need for .send() in v2
-            return accounts.value.filter(account => {
-                const parsedInfo = account.account.data.parsed.info;
-                return parsedInfo.tokenAmount.uiAmount === 0;
-            });
-        } catch (error) {
-            console.error("Error finding abandoned accounts:", error.message || error);
-            return [];
-        }
-    }
-
-    async claimAccount(accountPubkey) {
-        if (!this.publicKey || !this.currentProvider) throw new Error('Wallet not connected');
-
-        try {
-            // Get the account's balance
-            const accountBalance = await this.connection.getBalance(new solanaWeb3.PublicKey(accountPubkey));
-            
-            // Calculate 5% fee
-            const feeAmount = Math.floor(accountBalance * 0.05); // 5% fee
-            const userAmount = accountBalance - feeAmount;
-            
-            // Create transaction with two instructions
-            const transaction = new solanaWeb3.Transaction();
-            
-            // 1. Transfer 95% to user
-            transaction.add(
-                solanaWeb3.SystemProgram.transfer({
-                    fromPubkey: new solanaWeb3.PublicKey(accountPubkey),
-                    toPubkey: this.publicKey,
-                    lamports: userAmount
-                })
-            );
-            
-            // 2. Transfer 5% fee to fee wallet
-            transaction.add(
-                solanaWeb3.SystemProgram.transfer({
-                    fromPubkey: new solanaWeb3.PublicKey(accountPubkey),
-                    toPubkey: new solanaWeb3.PublicKey('7XYCEd1xUAkrHQt9kv4PpzXw3CSQjtGyp7DnmpveeVqs'),
-                    lamports: feeAmount
-                })
-            );
-
-            const signature = await this.currentProvider.signAndSendTransaction(transaction);
-            await this.connection.confirmTransaction(signature);
-            
-            // Update stats
-            this.stats.totalClaimed++;
-            this.stats.recentClaims++;
-            
-            return signature;
-        } catch (error) {
-            console.error('Error claiming account:', error);
-            throw error;
-        }
-    }
-
-    handleConnect(publicKey) {
-        if (!publicKey) return;
-        console.log('Wallet connected:', publicKey);
-        this.publicKey = publicKey;
-        document.dispatchEvent(new CustomEvent('walletConnected', { 
-            detail: { publicKey, provider: this.currentProvider }
-        }));
-    }
-
-    handleDisconnect() {
-        console.log('Wallet disconnected');
-        this.publicKey = null;
-        this.currentProvider = null;
-        document.dispatchEvent(new CustomEvent('walletDisconnected'));
-    }
-
-    handleAccountChanged(publicKey) {
-        console.log('Account changed:', publicKey);
-        if (publicKey) {
-            this.publicKey = publicKey;
-            document.dispatchEvent(new CustomEvent('accountChanged', { 
-                detail: publicKey 
-            }));
-        } else {
-            this.handleDisconnect();
-        }
-    }
-
-    async initializeAccountData() {
-        if (!this.publicKey) {
-            throw new Error('Wallet not connected');
-        }
-
-        try {
-            // Get account balance
-            const balance = await this.connection.getBalance(this.publicKey);
-            this.accountData.balance = balance / 1e9; // Convert lamports to SOL
-
-            // Find abandoned accounts
-            const accounts = await this.findAbandonedAccounts();
-            this.accountData.abandonedAccounts = accounts;
-
-            return this.accountData;
-        } catch (error) {
-            console.error('Error initializing account data:', error);
-            throw error;
-        }
-    }
-
-    async closeAccount(pubkey) {
-        try {
-            if (!this.currentProvider || !this.publicKey) {
-                throw new Error('Wallet not connected');
-            }
-
-            const transaction = new solanaWeb3.Transaction().add(
-                solanaWeb3.SystemProgram.close({
-                    fromPubkey: new solanaWeb3.PublicKey(pubkey),
-                    toPubkey: this.publicKey,
-                    lamports: 0 // Will close entire account
-                })
-            );
-
-            const signature = await this.currentProvider.signAndSendTransaction(transaction);
-            await this.connection.confirmTransaction(signature);
-
-            return signature;
-        } catch (error) {
-            console.error('Error closing account:', error);
-            throw error;
-        }
-    }
-
-    async updateBalance() {
-        if (!this.publicKey) return '0.0000';
-        try {
-            const balance = await this.connection.getBalance(this.publicKey);
-            const formattedBalance = (balance / solanaWeb3.LAMPORTS_PER_SOL).toFixed(4);
-            // Update the balance display
-            const walletInfo = document.getElementById('wallet-info');
-            const walletBalance = document.getElementById('wallet-balance');
-            if (walletInfo && walletBalance) {
-                walletInfo.classList.remove('hidden');
-                walletBalance.textContent = `${formattedBalance} SOL`;
-            }
-            return formattedBalance;
-        } catch (error) {
-            console.error('Error fetching balance:', error);
-            return '0.0000';
-        }
-    }
-
-    generateReferralLink() {
-        if (!this.publicKey) return '';
-        const baseUrl = window.location.origin;
-        return `${baseUrl}?ref=${this.publicKey.toString()}`;
-    }
-
-    async processReferral(referralAddress, claimAmount) {
-        if (!referralAddress) return;
-        
-        const referralReward = claimAmount * 0.35; // 35% referral reward
-        
-        try {
-            // Here you would implement the logic to transfer the referral reward
-            // This is a simplified example
-            const transaction = new solanaWeb3.Transaction().add(
-                solanaWeb3.SystemProgram.transfer({
-                    fromPubkey: this.publicKey,
-                    toPubkey: new solanaWeb3.PublicKey(referralAddress),
-                    lamports: referralReward * solanaWeb3.LAMPORTS_PER_SOL
-                })
-            );
-
-            const signature = await this.currentProvider.signAndSendTransaction(transaction);
-            await this.connection.confirmTransaction(signature);
-            
-            return signature;
-        } catch (error) {
-            console.error('Error processing referral:', error);
-            throw error;
-        }
-    }
-
-    async getAbandonedAccounts() {
-        if (!this.publicKey) return [];
-        
-        try {
-            const accounts = await this.connection.getParsedTokenAccountsByOwner(
-                this.publicKey,
-                { programId: this.TOKEN_PROGRAM_ID }
-            );
-
-            return accounts.value
-                .filter(acc => {
-                    try {
-                        const parsedData = acc.account.data.parsed;
-                        return parsedData && 
-                               parsedData.info && 
-                               parsedData.info.tokenAmount && 
-                               parsedData.info.tokenAmount.uiAmount === 0;
-                    } catch (e) {
-                        console.error('Error parsing account data:', e);
-                        return false;
-                    }
-                })
-                .map(acc => ({
-                    pubkey: acc.pubkey,
-                    rentExemptReserve: acc.account.lamports
-                }));
-        } catch (error) {
-            console.error('Error getting abandoned accounts:', error);
-            if (error.message.includes('429')) {
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                return this.getAbandonedAccounts(); // Retry once
-            }
-            throw error;
-        }
-    }
-
-    async getTokenAccounts() {
-        if (!this.publicKey) return [];
-        
-        try {
-            const accounts = await this.connection.getParsedTokenAccountsByOwner(
-                this.publicKey,
-                {
-                    programId: this.TOKEN_PROGRAM_ID
-                }
-            );
-
-            return accounts.value.map(account => ({
-                pubkey: account.pubkey,
-                mint: account.account.data.parsed.info.mint,
-                owner: account.account.data.parsed.info.owner,
-                balance: account.account.data.parsed.info.tokenAmount.amount,
-                decimals: account.account.data.parsed.info.tokenAmount.decimals
-            }));
-        } catch (error) {
-            console.error('Error getting token accounts:', error);
-            throw error;
-        }
-    }
-
-    async getTokenAccountBalance(tokenAccountPubkey) {
-        try {
-            const balance = await this.connection.getTokenAccountBalance(
-                new solanaWeb3.PublicKey(tokenAccountPubkey)
-            );
-            return balance.value;
-        } catch (error) {
-            console.error('Error getting token balance:', error);
-            throw error;
-        }
-    }
-
-    async closeTokenAccount(tokenAccountPubkey) {
-        if (!this.publicKey || !this.currentProvider) {
-            throw new Error('Wallet not connected');
-        }
-
-        try {
-            // Create the transaction
-            const transaction = new solanaWeb3.Transaction();
-            
-            // Create close account instruction
-            const instruction = new solanaWeb3.TransactionInstruction({
-                keys: [
-                    { pubkey: new solanaWeb3.PublicKey(tokenAccountPubkey), isSigner: false, isWritable: true },
-                    { pubkey: this.publicKey, isSigner: true, isWritable: true },
-                    { pubkey: this.publicKey, isSigner: false, isWritable: true },
-                    { pubkey: this.TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
-                ],
-                programId: this.TOKEN_PROGRAM_ID,
-                data: new Uint8Array([9]) // Close account instruction
-            });
-
-            transaction.add(instruction);
-
-            // Get the latest blockhash
-            const { blockhash } = await this.connection.getLatestBlockhash();
-            transaction.recentBlockhash = blockhash;
-            transaction.feePayer = this.publicKey;
-
-            try {
-                // Sign and send transaction
-                const signed = await this.currentProvider.signTransaction(transaction);
-                const signature = await this.connection.sendRawTransaction(signed.serialize());
-                
-                // Wait for confirmation
-                await this.connection.confirmTransaction(signature, 'confirmed');
-                
-                return signature;
-            } catch (signError) {
-                // Fallback to signAndSendTransaction if direct signing fails
-                const signature = await this.currentProvider.signAndSendTransaction(transaction);
-                await this.connection.confirmTransaction(signature, 'confirmed');
-                return signature;
-            }
-        } catch (error) {
-            console.error('Error closing token account:', error);
-            throw error;
-        }
-    }
-
-    async claimAll() {
-        if (!this.publicKey) throw new Error('Wallet not connected');
-
-        try {
-            const accounts = await this.getTokenAccounts();
-            const emptyAccounts = accounts.filter(acc => acc.balance === '0');
-            
-            let totalClaimed = 0;
-            const signatures = [];
-
-            for (const account of emptyAccounts) {
-                try {
-                    // Get account balance before closing
-                    const balance = await this.connection.getBalance(new solanaWeb3.PublicKey(account.pubkey));
-                    
-                    // Calculate fee and user amounts
-                    const feeAmount = Math.floor(balance * 0.05); // 5% fee
-                    const userAmount = balance - feeAmount;
-                    
-                    // Create transaction with fee split
-                    const transaction = new solanaWeb3.Transaction();
-                    
-                    // Transfer 95% to user
-                    transaction.add(
-                        solanaWeb3.SystemProgram.transfer({
-                            fromPubkey: new solanaWeb3.PublicKey(account.pubkey),
-                            toPubkey: this.publicKey,
-                            lamports: userAmount
-                        })
-                    );
-                    
-                    // Transfer 5% fee
-                    transaction.add(
-                        solanaWeb3.SystemProgram.transfer({
-                            fromPubkey: new solanaWeb3.PublicKey(account.pubkey),
-                            toPubkey: new solanaWeb3.PublicKey('7XYCEd1xUAkrHQt9kv4PpzXw3CSQjtGyp7DnmpveeVqs'),
-                            lamports: feeAmount
-                        })
-                    );
-
-                    const signature = await this.currentProvider.signAndSendTransaction(transaction);
-                    await this.connection.confirmTransaction(signature);
-                    signatures.push(signature);
-                    
-                    totalClaimed += userAmount / solanaWeb3.LAMPORTS_PER_SOL;
-                } catch (err) {
-                    console.error(`Failed to close account ${account.pubkey}:`, err);
-                }
-            }
-
-            return {
-                totalClaimed,
-                signatures,
-                accountsClosed: signatures.length
-            };
-        } catch (error) {
-            console.error('Error in claimAll:', error);
-            throw error;
-        }
-    }
-
-    async getClaimHistory() {
-        if (!this.publicKey) return [];
-        
-        try {
-            const signatures = await this.connection.getSignaturesForAddress(
-                this.publicKey,
-                { limit: 50 }
-            );
-            
-            const transactions = await Promise.all(
-                signatures.map(async sig => {
-                    const tx = await this.connection.getTransaction(sig.signature);
-                    return {
-                        signature: sig.signature,
-                        timestamp: sig.blockTime,
-                        amount: tx?.meta?.postBalances[0] - tx?.meta?.preBalances[0],
-                        status: sig.confirmationStatus
-                    };
-                })
-            );
-            
-            return transactions.filter(tx => tx.amount > 0);
-        } catch (error) {
-            console.error('Error getting claim history:', error);
-            return [];
-        }
-    }
-
-    async batchCloseAccounts(accounts, batchSize = 5) {
-        const results = [];
-        for (let i = 0; i < accounts.length; i += batchSize) {
-            const batch = accounts.slice(i, i + batchSize);
-            const batchPromises = batch.map(account => 
-                this.closeTokenAccount(account.pubkey)
-                    .then(signature => ({ success: true, signature, pubkey: account.pubkey }))
-                    .catch(error => ({ success: false, error, pubkey: account.pubkey }))
-            );
-            const batchResults = await Promise.all(batchPromises);
-            results.push(...batchResults);
-            // Add delay between batches to avoid rate limits
-            if (i + batchSize < accounts.length) {
-                await new Promise(resolve => setTimeout(resolve, 1000));
-            }
-        }
-        return results;
-    }
-
-    async getTokenAccountDetails(tokenAccountPubkey) {
-        try {
-            const account = await this.connection.getParsedAccountInfo(
-                new solanaWeb3.PublicKey(tokenAccountPubkey)
-            );
-            const mintInfo = await this.connection.getParsedAccountInfo(
-                new solanaWeb3.PublicKey(account.data.parsed.info.mint)
-            );
-            return {
-                mint: account.data.parsed.info.mint,
-                owner: account.data.parsed.info.owner,
-                tokenName: mintInfo.data.parsed.info.name,
-                tokenSymbol: mintInfo.data.parsed.info.symbol,
-                rentExemptReserve: account.lamports
-            };
-        } catch (error) {
-            console.error('Error getting token details:', error);
-            throw error;
-        }
-    }
-
-    async estimateClaimGas(tokenAccountPubkey) {
-        try {
-            const transaction = new solanaWeb3.Transaction();
-            transaction.add(
-                new solanaWeb3.TransactionInstruction({
-                    keys: [
-                        { pubkey: new solanaWeb3.PublicKey(tokenAccountPubkey), isSigner: false, isWritable: true },
-                        { pubkey: this.publicKey, isSigner: true, isWritable: true },
-                        { pubkey: this.publicKey, isSigner: false, isWritable: true },
-                        { pubkey: this.TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
-                    ],
-                    programId: this.TOKEN_PROGRAM_ID,
-                    data: new Uint8Array([9])
-                })
-            );
-            
-            const { value: fees } = await this.connection.getFeeForMessage(
-                transaction.compileMessage(),
-                'confirmed'
-            );
-            
-            return fees;
-        } catch (error) {
-            console.error('Error estimating gas:', error);
-            throw error;
-        }
-    }
-
-    async getAccountAnalytics() {
-        if (!this.publicKey) return null;
-        
-        try {
-            const accounts = await this.getAbandonedAccounts();
-            const totalValue = accounts.reduce((sum, acc) => sum + acc.rentExemptReserve, 0);
-            const oldestAccount = Math.min(...accounts.map(acc => acc.createTime));
-            
-            return {
-                totalAccounts: accounts.length,
-                totalValueSOL: totalValue / solanaWeb3.LAMPORTS_PER_SOL,
-                averageValueSOL: (totalValue / accounts.length) / solanaWeb3.LAMPORTS_PER_SOL,
-                oldestAccountAge: Math.floor((Date.now() - oldestAccount) / (1000 * 60 * 60 * 24)),
-                potentialSavings: totalValue / solanaWeb3.LAMPORTS_PER_SOL
-            };
-        } catch (error) {
-            console.error('Error getting analytics:', error);
-            return null;
-        }
+/* Responsive Adjustments */
+@media (max-width: 1400px) {
+    .dashboard-container {
+        width: calc(100% - 4rem);
+        padding: 0 2rem;
     }
 }
 
-class UI {
-    constructor() {
-        this.walletManager = new WalletManager();
-        this.setupEventListeners();
-        this.activeStars = new Map();
-        this.scanningAnimation = null;
-        this.referralAddress = null;
-        this.updateInterval = null;
-        this.particleInterval = null;
-        
-        // Add announcements
-        this.announcements = [
-            "Lowest fees on the market",
-            "Industry leading",
-            "Memecoin CA: "
-        ];
-        this.currentAnnouncementIndex = 0;
-        this.initializeAnnouncements();
-        this.initializeParticles();
-        this.startRealTimeUpdates();
-    }
-
-    initializeParticles() {
-        // Create additional dynamic particles
-        const particlesContainer = document.querySelector('.floating-particles');
-        if (!particlesContainer) return;
-
-        // Add more particles dynamically
-        for (let i = 0; i < 15; i++) {
-            const particle = document.createElement('div');
-            particle.className = 'particle';
-            particle.style.left = Math.random() * 100 + '%';
-            particle.style.animationDelay = Math.random() * 20 + 's';
-            particle.style.animationDuration = (15 + Math.random() * 10) + 's';
-            particlesContainer.appendChild(particle);
-        }
-    }
-
-    startRealTimeUpdates() {
-        // Update balance every 30 seconds
-        this.updateInterval = setInterval(() => {
-            if (this.walletManager.publicKey) {
-                this.updateWalletInfo();
-            }
-        }, 30000);
-
-        // Update network status every 10 seconds
-        setInterval(() => {
-            this.updateNetworkStatus(this.walletManager.currentNetwork);
-        }, 10000);
-
-        // Update live stats every 5 seconds
-        setInterval(() => {
-            this.updateLiveStats();
-        }, 5000);
-
-        // Add mouse trail effect
-        this.initializeMouseTrail();
-    }
-
-    updateLiveStats() {
-        // Simulate live stats updates
-        const stats = {
-            activeUsers: Math.floor(Math.random() * 1000) + 5000,
-            totalClaimed: (Math.random() * 100000).toFixed(2),
-            recentClaims: Math.floor(Math.random() * 100) + 50
-        };
-
-        // Update stats if elements exist
-        const referralCount = document.getElementById('referral-count');
-        const referralEarnings = document.getElementById('referral-earnings');
-        const pendingRewards = document.getElementById('pending-rewards');
-
-        if (referralCount) referralCount.textContent = stats.recentClaims;
-        if (referralEarnings) referralEarnings.textContent = `${stats.totalClaimed} SOL`;
-        if (pendingRewards) pendingRewards.textContent = `${(Math.random() * 10).toFixed(4)} SOL`;
-    }
-
-    initializeMouseTrail() {
-        let trail = [];
-        const maxTrailLength = 20;
-
-        document.addEventListener('mousemove', (e) => {
-            const dot = document.createElement('div');
-            dot.className = 'mouse-trail-dot';
-            dot.style.left = e.pageX + 'px';
-            dot.style.top = e.pageY + 'px';
-            document.body.appendChild(dot);
-
-            trail.push(dot);
-
-            if (trail.length > maxTrailLength) {
-                const oldDot = trail.shift();
-                oldDot.remove();
-            }
-
-            // Animate trail dots
-            trail.forEach((dot, index) => {
-                const opacity = (index / trail.length) * 0.3;
-                const scale = 1 - (index / trail.length) * 0.5;
-                dot.style.opacity = opacity;
-                dot.style.transform = `scale(${scale})`;
-            });
-        });
-    }
-
-    async setupEventListeners() {
-        // Wallet connect buttons
-        ['wallet-connect', 'hero-connect'].forEach(id => {
-            document.getElementById(id)?.addEventListener('click', () => {
-                document.getElementById('wallet-modal-overlay').classList.add('show');
-                this.updateWalletModal(); // Refresh wallet list
-            });
-        });
-
-        // Close modal
-        document.querySelector('.close-modal')?.addEventListener('click', () => {
-            document.getElementById('wallet-modal-overlay').classList.remove('show');
-        });
-
-        // Network selector
-        document.getElementById('network-select')?.addEventListener('change', (e) => {
-            this.walletManager.currentNetwork = e.target.value;
-            this.updateNetworkStatus(e.target.value);
-        });
-
-        // Handle wallet option clicks
-        document.querySelector('.wallet-options')?.addEventListener('click', async (e) => {
-            const walletOption = e.target.closest('.wallet-option');
-            if (!walletOption) return;
-
-            const walletId = walletOption.dataset.wallet;
-            if (walletOption.classList.contains('detected')) {
-                try {
-                    await this.handleWalletConnection(walletId);
-                } catch (error) {
-                    this.showNotification(error.message, 'error');
-                }
-            } else {
-                this.handleWalletInstall(walletId);
-            }
-        });
-
-        const claimAllButton = document.getElementById('claim-all');
-        if (claimAllButton) {
-            claimAllButton.addEventListener('click', () => this.claimAll());
-        }
-
-        // Refresh accounts button
-        const refreshButton = document.getElementById('refresh-accounts');
-        if (refreshButton) {
-            refreshButton.addEventListener('click', () => this.refreshAccounts());
-        }
-
-        // Copy referral link
-        const copyButton = document.getElementById('copy-referral');
-        if (copyButton) {
-            copyButton.addEventListener('click', () => this.copyReferralLink());
-        }
-
-        // Add keyboard shortcuts
-        document.addEventListener('keydown', (e) => {
-            if (e.ctrlKey && e.key === 'r') {
-                e.preventDefault();
-                this.refreshAccounts();
-            }
-        });
-    }
-
-    async refreshAccounts() {
-        try {
-            this.showLoading('Refreshing accounts...');
-            
-            // Add a small delay to show the loading animation
-            await new Promise(resolve => setTimeout(resolve, 500));
-            
-            await this.scanForAccounts();
-            this.showNotification('Accounts refreshed successfully!', 'success');
-            
-            // Add success animation to refresh button
-            const refreshBtn = document.getElementById('refresh-accounts');
-            if (refreshBtn) {
-                refreshBtn.style.transform = 'rotate(360deg)';
-                setTimeout(() => {
-                    refreshBtn.style.transform = 'rotate(0deg)';
-                }, 500);
-            }
-        } catch (error) {
-            this.showNotification('Error refreshing accounts', 'error');
-        } finally {
-            this.hideLoading();
-        }
-    }
-
-    async copyReferralLink() {
-        const referralLink = document.getElementById('referral-link');
-        if (referralLink && referralLink.value) {
-            try {
-                await navigator.clipboard.writeText(referralLink.value);
-                this.showNotification('Referral link copied to clipboard!', 'success');
-                
-                // Add success animation to copy button
-                const copyBtn = document.getElementById('copy-referral');
-                if (copyBtn) {
-                    copyBtn.innerHTML = '<i class="fas fa-check"></i> Copied!';
-                    setTimeout(() => {
-                        copyBtn.innerHTML = '<i class="fas fa-copy"></i> Copy';
-                    }, 2000);
-                }
-            } catch (error) {
-                // Fallback for older browsers
-                referralLink.select();
-                document.execCommand('copy');
-                this.showNotification('Referral link copied to clipboard!', 'success');
-            }
-        }
-    }
-
-    async handleWalletConnection(providerId) {
-        try {
-            this.showLoading('Connecting wallet...');
-            const publicKey = await this.walletManager.connectWallet(providerId);
-            
-            if (!publicKey) {
-                throw new Error('Failed to connect wallet');
-            }
-
-            // Close wallet modal
-            const modalOverlay = document.getElementById('wallet-modal-overlay');
-            if (modalOverlay) {
-                modalOverlay.classList.remove('show');
-            }
-
-            // Update wallet button
-            await this.updateWalletInfo();
-
-            // Update UI states
-            document.getElementById('pre-connect')?.classList.add('hidden');
-            document.getElementById('post-connect')?.classList.remove('hidden');
-            document.getElementById('post-connect')?.classList.add('active');
-
-            await this.initializeReferral();
-            await this.scanForAccounts();
-            
-            this.hideLoading();
-            this.showNotification('Wallet connected successfully!', 'success');
-        } catch (error) {
-            this.hideLoading();
-            this.showNotification(error.message, 'error');
-        }
-    }
-
-    async updateWalletModal() {
-        const modalContent = document.querySelector('.wallet-options');
-        if (!modalContent) return;
-
-        try {
-            const wallets = await this.walletManager.detectWallets();
-            console.log('Detected wallets:', wallets);
-
-            // Sort wallets: installed first, then by name
-            const sortedWallets = Object.entries(wallets).sort(([,a], [,b]) => {
-                if (a.installed === b.installed) return a.name.localeCompare(b.name);
-                return a.installed ? -1 : 1;
-            });
-
-            modalContent.innerHTML = sortedWallets.map(([id, wallet]) => `
-                <div class="wallet-option ${wallet.installed ? 'detected' : 'not-installed'}" 
-                     data-wallet="${id}">
-                    <img src="${wallet.icon}" alt="${wallet.name}" onerror="handleImageError(this)">
-                    <div class="wallet-info">
-                        <span class="wallet-name">${wallet.name}</span>
-                        ${wallet.installed ? 
-                            `<span class="wallet-badge">Detected</span>` : 
-                            `<span class="wallet-badge install">Install</span>`
-                        }
-                    </div>
-                </div>
-            `).join('');
-
-            // Add click handlers
-            modalContent.querySelectorAll('.wallet-option').forEach(option => {
-                option.addEventListener('click', async () => {
-                    const walletId = option.dataset.wallet;
-                    if (wallets[walletId].installed) {
-                        await this.handleWalletConnection(walletId);
-                    } else {
-                        window.open(wallets[walletId].url, '_blank');
-                    }
-                });
-            });
-
-        } catch (error) {
-            console.error('Error updating wallet modal:', error);
-            modalContent.innerHTML = `
-                <div class="error-message">
-                    Error loading wallets. Please refresh and try again.
-                </div>
-            `;
-        }
-    }
-
-    handleWalletInstall(walletId) {
-        const wallet = this.walletManager.walletProviders[walletId];
-        const urls = {
-            phantom: 'https://phantom.app/download',
-            solflare: 'https://solflare.com/download',
-            backpack: 'https://www.backpack.app/download',
-            // Add more wallet download URLs
-        };
-
-        if (urls[walletId]) {
-            window.open(urls[walletId], '_blank');
-            this.showNotification(`Please install ${wallet.name} to continue`, 'info');
-        }
-    }
-
-    updateNetworkStatus(network) {
-        const statusDot = document.querySelector('.status-dot');
-        if (statusDot) {
-            statusDot.className = `status-dot ${network}`;
-            
-            // Add animation class
-            statusDot.classList.add('pulse');
-            setTimeout(() => statusDot.classList.remove('pulse'), 1000);
-        }
-
-        // Update network selector value
-        const networkSelect = document.getElementById('network-select');
-        if (networkSelect) {
-            networkSelect.value = network;
-        }
-    }
-
-    showNotification(message, type = 'info') {
-        const toast = document.createElement('div');
-        toast.className = `toast ${type} slide-in`;
-        toast.innerHTML = `
-            <i class="fas fa-${this.getNotificationIcon(type)}"></i>
-            <div class="toast-content">
-                <p>${message}</p>
-            </div>
-        `;
-        
-        const container = document.querySelector('.toast-container');
-        if (!container) {
-            // Create container if it doesn't exist
-            const newContainer = document.createElement('div');
-            newContainer.className = 'toast-container';
-            document.body.appendChild(newContainer);
-        }
-        
-        const toastContainer = document.querySelector('.toast-container');
-        toastContainer.appendChild(toast);
-        
-        setTimeout(() => {
-            toast.classList.add('slide-out');
-            setTimeout(() => toast.remove(), 300);
-        }, 3000);
-    }
-
-    getNotificationIcon(type) {
-        const icons = {
-            success: 'check-circle',
-            error: 'exclamation-circle',
-            info: 'info-circle',
-            warning: 'exclamation-triangle'
-        };
-        return icons[type] || 'info-circle';
-    }
-
-    handleWalletDisconnected() {
-        document.getElementById('post-connect').classList.remove('active');
-        document.getElementById('post-connect').classList.add('hidden');
-        document.getElementById('pre-connect').classList.remove('hidden');
-        document.getElementById('pre-connect').classList.add('active');
-        document.getElementById('wallet-address').textContent = '';
-        document.getElementById('wallet-balance').textContent = '0 SOL';
-    }
-
-    async scanForAccounts() {
-        try {
-            this.startScanningAnimation();
-            const accounts = await this.walletManager.getAbandonedAccounts();
-            this.updateAbandonedAccounts(accounts);
-            this.stopScanningAnimation();
-        } catch (error) {
-            console.error('Error scanning for accounts:', error);
-            this.showNotification('Error scanning for accounts', 'error');
-            this.stopScanningAnimation();
-        }
-    }
-
-    async updateAbandonedAccounts(accounts) {
-        const accountsList = document.getElementById('abandoned-accounts');
-        const totalAmountSpan = document.getElementById('total-amount');
-        
-        if (!accountsList) return;
-
-        if (!accounts || accounts.length === 0) {
-            accountsList.innerHTML = `
-                <div class="empty-state">
-                    <i class="fas fa-check-circle"></i>
-                    <p>No abandoned accounts found</p>
-                </div>
-            `;
-            if (totalAmountSpan) totalAmountSpan.textContent = '0';
-            return;
-        }
-
-        // Calculate total amount of SOL that can be reclaimed
-        const totalAmount = accounts.reduce((sum, account) => 
-            sum + (account.rentExemptReserve / solanaWeb3.LAMPORTS_PER_SOL), 0);
-        
-        if (totalAmountSpan) {
-            totalAmountSpan.textContent = totalAmount.toFixed(4);
-        }
-
-        accountsList.innerHTML = accounts.map(account => `
-            <div class="abandoned-account">
-                <div class="account-info">
-                    <div class="account-address">
-                        ${account.pubkey.toString().slice(0, 4)}...${account.pubkey.toString().slice(-4)}
-                    </div>
-                    <div class="account-balance">
-                        ${(account.rentExemptReserve / solanaWeb3.LAMPORTS_PER_SOL).toFixed(4)} SOL
-                    </div>
-                </div>
-                <button class="btn-claim" onclick="ui.claimAccount('${account.pubkey}')">
-                    <i class="fas fa-money-bill-wave"></i>
-                    Claim
-                </button>
-            </div>
-        `).join('');
-    }
-
-    async claimAll() {
-        try {
-            this.showLoading('Claiming all accounts...');
-            const accounts = await this.walletManager.getAbandonedAccounts();
-            
-            if (!accounts || accounts.length === 0) {
-                throw new Error('No accounts to claim');
-            }
-
-            let totalClaimed = 0;
-            for (const account of accounts) {
-                try {
-                    await this.claimAccount(account.pubkey);
-                    totalClaimed += account.account.lamports / solanaWeb3.LAMPORTS_PER_SOL;
-                } catch (error) {
-                    console.error(`Error claiming account ${account.pubkey}:`, error);
-                }
-            }
-
-            this.showNotification(`Successfully claimed ${totalClaimed.toFixed(4)} SOL from ${accounts.length} accounts`, 'success');
-            await this.scanForAccounts();
-            await this.updateWalletInfo();
-        } catch (error) {
-            this.showNotification(error.message, 'error');
-        } finally {
-            this.hideLoading();
-        }
-    }
-
-    showLoading(message) {
-        const loader = document.getElementById('loading-overlay');
-        if (loader) {
-            loader.querySelector('.loader-message').textContent = message;
-            loader.classList.remove('hidden');
-        }
-    }
-
-    hideLoading() {
-        const loader = document.getElementById('loading-overlay');
-        if (loader) {
-            loader.classList.add('hidden');
-        }
-    }
-
-    startScanningAnimation() {
-        const scanText = document.querySelector('.scanning-text');
-        if (!scanText) return;
-
-        let dots = '';
-        this.scanningAnimation = setInterval(() => {
-            dots = dots.length >= 3 ? '' : dots + '.';
-            scanText.textContent = `Scanning for abandoned accounts${dots}`;
-        }, 500);
-    }
-
-    stopScanningAnimation() {
-        if (this.scanningAnimation) {
-            clearInterval(this.scanningAnimation);
-            this.scanningAnimation = null;
-        }
-    }
-
-    handleImageError(img) {
-        img.onerror = null; // Prevent infinite loop
-        img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiByeD0iOCIgZmlsbD0iIzFBMUExQSIvPgo8cGF0aCBkPSJNMjAgMTRDMjEuMTA0NyAxNCAyMiAxMy4xMDQ3IDIyIDEyQzIyIDEwLjg5NTMgMjEuMTA0NyAxMCAyMCAxMEMxOC44OTUzIDEwIDE4IDEwLjg5NTMgMTggMTJDMTggMTMuMTA0NyAxOC44OTUzIDE0IDIwIDE0WiIgZmlsbD0iIzRBNEE0QSIvPgo8cGF0aCBkPSJNMjAgMjJDMjEuMTA0NyAyMiAyMiAyMS4xMDQ3IDIyIDIwQzIyIDE4Ljg5NTMgMjEuMTA0NyAxOCAyMCAxOEMxOC44OTUzIDE4IDE4IDE4Ljg5NTMgMTggMjBDMTggMjEuMTA0NyAxOC44OTUzIDIyIDIwIDIyWiIgZmlsbD0iIzRBNEE0QSIvPgo8cGF0aCBkPSJNMjAgMzBDMjEuMTA0NyAzMCAyMiAyOS4xMDQ3IDIyIDI4QzIyIDI2Ljg5NTMgMjEuMTA0NyAyNiAyMCAyNkMxOC44OTUzIDI2IDE4IDI2Ljg5NTMgMTggMjhDMTggMjkuMTA0NyAxOC44OTUzIDMwIDIwIDMwWiIgZmlsbD0iIzRBNEE0QSIvPgo8L3N2Zz4K';
-        img.style.opacity = '0.5';
-    }
-
-    initializeReferral() {
-        try {
-            const urlParams = new URLSearchParams(window.location.search);
-            this.referralAddress = urlParams.get('ref');
-
-            const referralLink = document.getElementById('referral-link');
-            if (referralLink && this.walletManager.publicKey) {
-                const link = `${window.location.origin}?ref=${this.walletManager.publicKey.toString()}`;
-                referralLink.value = link;
-            }
-
-            // Only show referral notification once
-            if (this.referralAddress && !this.referralNotificationShown) {
-                this.showNotification('Referral link detected!', 'info');
-                this.referralNotificationShown = true;
-            }
-        } catch (error) {
-            console.error('Error initializing referral:', error);
-        }
-    }
-
-    async claimAccount(pubkey) {
-        try {
-            this.showLoading('Claiming account...');
-            
-            // Get account info before closing
-            const account = await this.walletManager.connection.getAccountInfo(new solanaWeb3.PublicKey(pubkey));
-            const claimAmount = account.lamports / solanaWeb3.LAMPORTS_PER_SOL;
-
-            // Close the account
-            const result = await this.walletManager.closeTokenAccount(pubkey);
-
-            // Process referral if exists
-            if (this.referralAddress) {
-                const referralAmount = claimAmount * 0.35; // 35% referral fee
-                await this.processReferral(this.referralAddress, referralAmount);
-            }
-
-            this.showNotification(`Account closed successfully! Claimed ${claimAmount} SOL`, 'success');
-            await this.scanForAccounts();
-            await this.updateWalletInfo();
-        } catch (error) {
-            this.showNotification(error.message, 'error');
-        } finally {
-            this.hideLoading();
-        }
-    }
-
-    async updateWalletInfo() {
-        const connectButton = document.getElementById('wallet-connect');
-        if (connectButton && this.walletManager.publicKey) {
-            const walletAddress = this.walletManager.publicKey.toString();
-            const balance = await this.walletManager.getBalance();
-            
-            connectButton.innerHTML = `
-                <div class="wallet-info">
-                    <span class="wallet-address">${walletAddress.slice(0, 4)}...${walletAddress.slice(-4)}</span>
-                    <span class="wallet-balance balance-update">${balance} SOL</span>
-                </div>
-            `;
-            connectButton.classList.add('connected');
-        }
-    }
-
-    initializeAnnouncements() {
-        const banner = document.querySelector('.announcement-banner');
-        if (!banner) return;
-
-        // Create initial announcement
-        this.createAnnouncement();
-
-        // Rotate announcements every 5 seconds
-        setInterval(() => {
-            const currentAnnouncement = banner.querySelector('.announcement-text.active');
-            if (currentAnnouncement) {
-                currentAnnouncement.classList.add('exit');
-                setTimeout(() => currentAnnouncement.remove(), 500);
-            }
-
-            this.currentAnnouncementIndex = (this.currentAnnouncementIndex + 1) % this.announcements.length;
-            this.createAnnouncement();
-        }, 5000);
-    }
-
-    createAnnouncement() {
-        const banner = document.querySelector('.announcement-banner');
-        const announcement = document.createElement('div');
-        announcement.className = 'announcement-text';
-        announcement.textContent = this.announcements[this.currentAnnouncementIndex];
-        banner.appendChild(announcement);
-
-        // Trigger reflow to ensure animation plays
-        announcement.offsetHeight;
-        announcement.classList.add('active');
-    }
-
-    // Cleanup method
-    destroy() {
-        if (this.updateInterval) {
-            clearInterval(this.updateInterval);
-        }
-        if (this.scanningAnimation) {
-            clearInterval(this.scanningAnimation);
-        }
-        if (this.particleInterval) {
-            clearInterval(this.particleInterval);
-        }
-    }
-}
-
-// Initialize the application
-let ui;
-document.addEventListener('DOMContentLoaded', () => {
-    ui = new UI();
-});
-
-function setupImageErrorHandling() {
-    document.querySelectorAll('img').forEach(img => {
-        img.onerror = function() {
-            handleImageError(this);
-        };
-    });
-}
-
-// Call this after DOM is loaded
-document.addEventListener('DOMContentLoaded', setupImageErrorHandling);
-
-// Make handleImageError available globally
-window.handleImageError = function(img) {
-    img.onerror = null; // Prevent infinite loop
-    img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiByeD0iOCIgZmlsbD0iIzFBMUExQSIvPgo8cGF0aCBkPSJNMjAgMTRDMjEuMTA0NyAxNCAyMiAxMy4xMDQ3IDIyIDEyQzIyIDEwLjg5NTMgMjEuMTA0NyAxMCAyMCAxMEMxOC44OTUzIDEwIDE4IDEwLjg5NTMgMTggMTJDMTggMTMuMTA0NyAxOC44OTUzIDE0IDIwIDE0WiIgZmlsbD0iIzRBNEE0QSIvPgo8cGF0aCBkPSJNMjAgMjJDMjEuMTA0NyAyMiAyMiAyMS4xMDQ3IDIyIDIwQzIyIDE4Ljg5NTMgMjEuMTA0NyAxOCAyMCAxOEMxOC44OTUzIDE4IDE4IDE4Ljg5NTMgMTggMjBDMTggMjEuMTA0NyAxOC44OTUzIDIyIDIwIDIyWiIgZmlsbD0iIzRBNEE0QSIvPgo8cGF0aCBkPSJNMjAgMzBDMjEuMTA0NyAzMCAyMiAyOS4xMDQ3IDIyIDI4QzIyIDI2Ljg5NTMgMjEuMTA0NyAyNiAyMCAyNkMxOC44OTUzIDI2IDE4IDI2Ljg5NTMgMTggMjhDMTggMjkuMTA0NyAxOC44OTUzIDMwIDIwIDMwWiIgZmlsbD0iIzRBNEE0QSIvPgo8L3N2Zz4K';
-    img.style.opacity = '0.5';
-};
-
-// Update the mode toggle initialization
-document.addEventListener("DOMContentLoaded", function () {
-    const toggle = document.getElementById("mode-toggle");
+/* ----------------------- Full CSS Below ----------------------- */
+
+:root {
+    /* Updated color scheme with white theme */
+    --primary-color: #5C67FF;
+    --secondary-color: #7D85FF;
+    --background-color: #ffffff;
+    --surface-color: rgba(250, 250, 250, 0.9);
+    --card-color: rgba(255, 255, 255, 0.95);
+    --text-color: #1A1A1A;
+    --text-secondary: #666666;
+    --gradient: linear-gradient(135deg, #5C67FF, #7D85FF);
+    --glass-border: rgba(0, 0, 0, 0.1);
+    --nav-background: rgba(255, 255, 255, 0.9);
+    --nav-hover-background: rgba(255, 255, 255, 0.9); /* Adjust this value */
     
-    // Only proceed if toggle exists
-    if (toggle) {
-        // Check stored preference (if any)
-        if (localStorage.getItem("mode") === "light") {
-            toggle.checked = true;
-        } else {
-            toggle.checked = false;
-        }
-        updateMode();
+    /* Updated Jito-style variables for light theme */
+    --glow-color: rgba(92, 103, 255, 0.1);
+    --hover-glow: rgba(92, 103, 255, 0.15);
+    --card-radius: 16px;
+    --button-radius: 12px;
+    --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
 
-        // Update the mode by toggling body classes
-        function updateMode() {
-            if (toggle.checked) {
-                document.body.classList.add("light-mode");
-                document.body.classList.remove("dark-mode");
-            } else {
-                document.body.classList.add("dark-mode");
-                document.body.classList.remove("light-mode");
-            }
-        }
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
 
-        // Listen for changes on the toggle switch
-        toggle.addEventListener("change", function () {
-            updateMode();
-            localStorage.setItem("mode", toggle.checked ? "light" : "dark");
-        });
+body {
+    background-color: var(--background-color);
+    /* color: var(--text-color); */
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    line-height: 1.5;
+    min-height: 100vh;
+}
+
+/* Dynamic Background with Enhanced Animations */
+.dynamic-bg {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle at top left, rgba(92, 103, 255, 0.05), transparent 50%),
+                radial-gradient(circle at bottom right, rgba(125, 133, 255, 0.05), transparent 50%);
+    opacity: 0.8;
+    z-index: -1;
+    transition: background 0.5s ease;
+}
+
+.dynamic-bg::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: 
+        radial-gradient(circle at 20% 80%, rgba(92, 103, 255, 0.1) 0%, transparent 50%),
+        radial-gradient(circle at 80% 20%, rgba(125, 133, 255, 0.1) 0%, transparent 50%),
+        radial-gradient(circle at 40% 40%, rgba(92, 103, 255, 0.05) 0%, transparent 50%);
+    animation: backgroundFloat 20s ease-in-out infinite;
+}
+
+@keyframes backgroundFloat {
+    0%, 100% { transform: translate(0, 0) rotate(0deg); }
+    25% { transform: translate(-10px, -10px) rotate(1deg); }
+    50% { transform: translate(10px, -5px) rotate(-1deg); }
+    75% { transform: translate(-5px, 10px) rotate(0.5deg); }
+}
+
+
+
+/* Stars Animation */
+.stars-container,
+.star,
+.star::after,
+@keyframes starFloat {
+    display: none;
+}
+
+/* Glass Effects */
+.glass-effect {
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-border);
+    box-shadow: 
+        0 8px 32px 0 rgba(0, 0, 0, 0.2),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+    transition: all 0.3s ease;
+}
+
+.glass-effect:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: var(--primary-color);
+}
+
+.glass-nav {
+    background: rgba(10, 10, 10, 0.8);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--glass-border);
+}
+
+/* Navigation */
+nav {
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--glass-border);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+    padding: 1rem 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: fixed;
+    top: 32px;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    transition: all 0.3s ease;
+}
+
+.logo {
+    text-decoration: none;
+    height: 40px; /* Fixed height */
+    width: auto;
+    display: flex;
+    align-items: center;
+}
+
+nav:hover {
+  background: rgba(255,255,255,0.9); /* Matches the default background */
+}
+
+.logo img {
+    height: 40px; /* Match container height */
+    width: auto;
+    object-fit: contain;
+    margin-right: 1rem;
+}
+
+.nav-links {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+/* Network Selector */
+.network-selector {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--surface-color);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 0.5rem 1rem;
+    color: var(--text-color);
+}
+
+/* Status Dot Styling */
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #00B894;
+    position: relative;
+    animation: continuousPulse 2s ease-in-out infinite;
+}
+
+.status-dot::after {
+    content: '';
+    position: absolute;
+    top: -2px;
+    left: -2px;
+    right: -2px;
+    bottom: -2px;
+    border: 2px solid #00B894;
+    border-radius: 50%;
+    animation: continuousPulse 2s ease-in-out infinite;
+    animation-delay: 0.5s;
+}
+
+.status-dot.mainnet {
+    background: #00B894;
+}
+
+.status-dot.mainnet::after {
+    border-color: #00B894;
+}
+
+.status-dot.devnet {
+    background: #F39C12;
+}
+
+.status-dot.devnet::after {
+    border-color: #F39C12;
+}
+
+.status-dot.pulse {
+    animation: statusPulse 0.5s ease-in-out;
+}
+
+@keyframes continuousPulse {
+    0%, 100% { 
+        transform: scale(1); 
+        opacity: 1;
     }
-});
+    50% { 
+        transform: scale(1.3); 
+        opacity: 0.7;
+    }
+}
+
+@keyframes statusPulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.5); }
+    100% { transform: scale(1); }
+}
+
+#network-select {
+    background: transparent;
+    border: none;
+    color: var(--text-color);
+    font-size: 0.9rem;
+    padding-right: 1.5rem;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+}
+
+.network-selector::after {
+    content: '▼';
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-secondary);
+    pointer-events: none;
+    font-size: 0.8rem;
+}
+
+/* Connect Wallet Button */
+.connect-wallet {
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: var(--button-radius);
+    padding: 12px 24px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.connect-wallet:hover {
+    background: var(--secondary-color);
+    box-shadow: 0 0 20px var(--glow-color);
+    transform: translateY(-1px);
+}
+
+.connect-wallet.connected {
+    background: var(--card-color);
+    border: 1px solid var(--glass-border);
+    padding: 0.5rem 1rem;
+}
+
+/* Hero Badge */
+.hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(0, 184, 148, 0.1);
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    margin-bottom: 2rem;
+    position: relative;
+    overflow: hidden;
+    animation: badgeFloat 3s ease-in-out infinite;
+}
+
+.hero-badge::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(0, 184, 148, 0.2), transparent);
+    animation: badgeShine 3s ease-in-out infinite;
+}
+
+@keyframes badgeFloat {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+}
+
+@keyframes badgeShine {
+    0% { left: -100%; }
+    50% { left: 100%; }
+    100% { left: 100%; }
+}
+
+.hero-badge .pulse {
+    width: 8px;
+    height: 8px;
+    background: #00B894;
+    border-radius: 50%;
+    position: relative;
+    animation: continuousPulse 2s ease-in-out infinite;
+}
+
+.hero-badge .pulse::after {
+    content: '';
+    position: absolute;
+    top: -4px;
+    left: -4px;
+    right: -4px;
+    bottom: -4px;
+    border: 2px solid #00B894;
+    border-radius: 50%;
+    animation: continuousPulse 2s ease-in-out infinite;
+    animation-delay: 0.5s;
+}
+
+/* Wallet Modal */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
+}
+
+.modal-overlay.show {
+    opacity: 1;
+    visibility: visible;
+}
+
+.wallet-modal {
+    background: var(--card-color);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--card-radius);
+    box-shadow: var(--card-shadow);
+    padding: 2rem;
+    max-width: 500px;
+    width: 90%;
+    transform: scale(0.9);
+    transition: all 0.3s ease;
+}
+
+.modal-overlay.show .wallet-modal {
+    transform: scale(1);
+}
+
+.modal-header {
+    background: transparent;
+    padding: 0 0 1.5rem 0;
+    border-bottom: 1px solid var(--glass-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-title {
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: var(--text-color);
+}
+
+.close-modal {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0.5rem;
+    transition: all 0.3s ease;
+}
+
+.close-modal:hover {
+    color: var(--text-color);
+    transform: rotate(90deg);
+}
+
+.wallet-options {
+    max-height: 60vh;
+    overflow-y: auto;
+    padding-right: 0.5rem;
+    margin-right: -0.5rem;
+}
+
+.wallet-option {
+    background: var(--surface-color);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--button-radius);
+    padding: 1rem;
+    margin-bottom: 1rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.wallet-option::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(92, 103, 255, 0.1), transparent);
+    transition: left 0.5s ease;
+}
+
+.wallet-option:hover::before {
+    left: 100%;
+}
+
+.wallet-option:hover {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 20px var(--glow-color);
+    transform: translateY(-2px);
+}
+
+.wallet-option .wallet-info {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.wallet-option img {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    object-fit: contain;
+}
+
+.wallet-name {
+    font-weight: 500;
+    color: var(--text-color);
+}
+
+.wallet-badge {
+    font-size: 0.8rem;
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    background: rgba(0, 184, 148, 0.1);
+    color: var(--primary-color);
+}
+
+.wallet-badge.install {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-secondary);
+}
+
+/* Balance Display */
+.balance-container {
+    background: linear-gradient(135deg, rgba(0, 184, 148, 0.1), rgba(0, 184, 148, 0.05));
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    padding: 2rem;
+    margin: 2rem 0;
+    animation: fadeIn 0.5s ease-out;
+    transition: all 0.3s ease;
+}
+
+.balance-container:hover {
+    transform: translateY(-2px);
+    animation: glowPulse 2s infinite;
+}
+
+.balance-label {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
+
+.balance {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: var(--primary-color);
+    text-shadow: 0 0 20px rgba(0, 184, 148, 0.3);
+}
+
+/* Real-time Balance Updates */
+.balance-update {
+    animation: balancePulse 0.5s ease-in-out;
+}
+
+@keyframes balancePulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+
+/* Animations */
+@keyframes pulse {
+    0% {
+        transform: scale(1);
+        opacity: 0.5;
+    }
+    70% {
+        transform: scale(1.5);
+        opacity: 0;
+    }
+    100% {
+        transform: scale(1);
+        opacity: 0;
+    }
+}
+
+@keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+/* Main Content */
+main {
+    padding-top: 32px;
+    min-height: 100vh;
+}
+
+/* Pre-connect State */
+#pre-connect {
+    padding: 4rem 5%;
+    text-align: center;
+}
+
+.hero-content {
+    text-align: center;
+    max-width: 800px;
+    margin: 8rem auto 4rem;
+}
+
+.hero-content h1 {
+    font-size: 4rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 1.5rem;
+    line-height: 1.1;
+}
+
+.gradient-text {
+    background: var(--gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.hero-subtitle {
+    font-size: 1.2rem;
+    color: var(--text-secondary);
+    margin-bottom: 3rem;
+}
+
+.connect-prompt {
+    margin: 3rem 0;
+}
+
+.large-connect-btn {
+    background: var(--gradient);
+    color: white;
+    border: none;
+    padding: 1.5rem 3rem;
+    border-radius: 12px;
+    font-size: 1.2rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin: 0 auto;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+    animation: buttonGlow 2s ease-in-out infinite;
+}
+
+.large-connect-btn::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.5s ease;
+}
+
+.large-connect-btn:hover::before {
+    left: 100%;
+}
+
+.large-connect-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(92, 103, 255, 0.3);
+}
+
+@keyframes buttonGlow {
+    0%, 100% { box-shadow: 0 5px 15px rgba(92, 103, 255, 0.2); }
+    50% { box-shadow: 0 5px 25px rgba(92, 103, 255, 0.4); }
+}
+
+/* Live Stats */
+.live-stats {
+    display: none;
+}
+
+/* Post-connect State */
+.dashboard-container {
+    display: flex;
+    gap: 3rem;
+    width: calc(100% - 6rem);
+    margin: 3rem auto;
+    padding: 0 3rem;
+    height: calc(100vh - 160px);
+}
+
+/* Common section styles */
+.abandoned-accounts,
+.referral-section {
+    background: transparent !important;
+    border: 1px solid var(--glass-border);
+    border-radius: 20px;
+    padding: 2.5rem;
+    display: flex;
+    flex-direction: column;
+    position: relative; /* For claim all positioning */
+}
+
+/* Common header styles */
+.accounts-header,
+.referral-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--glass-border);
+}
+
+.accounts-header h2,
+.referral-header h2 {
+    color: var(--primary-color);
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin: 0;
+}
+
+/* Content areas */
+.accounts-list,
+.referral-content {
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 1rem;
+    margin-bottom: 2rem; /* Space for bottom buttons */
+}
+
+/* Referral stats styling */
+.referral-stats {
+    display: grid;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.stat-card {
+    background: transparent !important;
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+    animation: cardFloat 4s ease-in-out infinite;
+}
+
+.stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, rgba(92, 103, 255, 0.05), transparent);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.stat-card:hover::before {
+    opacity: 1;
+}
+
+.stat-card:hover {
+    border-color: var(--primary-color);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(92, 103, 255, 0.15);
+}
+
+@keyframes cardFloat {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-2px); }
+}
+
+/* Referral link container */
+.referral-link-container {
+    background: transparent !important;
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-top: 1rem;
+}
+
+.referral-link-input {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+.referral-link {
+    background: transparent !important;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    padding: 0.8rem 1rem;
+    color: var(--text-color);
+    font-family: 'JetBrains Mono', monospace;
+    flex: 1;
+}
+
+/* Claim all button container */
+.claim-all-container {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 1.5rem 2.5rem;
+    border-top: 1px solid var(--glass-border);
+    margin-top: auto;
+    background: transparent;
+}
+
+.claim-all-button {
+    width: 100%;
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    padding: 1rem;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.8rem;
+    transition: all 0.3s ease;
+}
+
+.claim-all-button:hover {
+    background: var(--secondary-color);
+    transform: translateY(-2px);
+}
+
+.claim-all-button i {
+    font-size: 1.2rem;
+}
+
+/* Account cards */
+.abandoned-account {
+    background: transparent;
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.abandoned-account::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(92, 103, 255, 0.1), transparent);
+    transition: left 0.5s ease;
+}
+
+.abandoned-account:hover::before {
+    left: 100%;
+}
+
+.abandoned-account:hover {
+    border-color: var(--primary-color);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(92, 103, 255, 0.15);
+}
+
+/* Improve scrollbars */
+.accounts-list::-webkit-scrollbar,
+.referral-content::-webkit-scrollbar {
+    width: 6px;
+}
+
+.accounts-list::-webkit-scrollbar-track,
+.referral-content::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.accounts-list::-webkit-scrollbar-thumb,
+.referral-content::-webkit-scrollbar-thumb {
+    background: var(--primary-color);
+    border-radius: 3px;
+    opacity: 0.5;
+}
+
+/* Responsive adjustments */
+@media (max-width: 1400px) {
+    .dashboard-container {
+        width: calc(100% - 4rem);
+        padding: 0 2rem;
+    }
+}
+
+/* Utility Classes */
+.hidden {
+    display: none !important;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .stars-container .star {
+        display: none;
+    }
+    
+    nav {
+        padding: 1rem;
+    }
+    
+    .network-status {
+        padding: 0.5rem;
+    }
+
+    .nav-links {
+        gap: 0.5rem;
+    }
+
+    #network-select {
+        font-size: 0.8rem;
+    }
+
+    .connect-wallet {
+        padding: 0.6rem 1rem;
+        font-size: 0.9rem;
+    }
+
+    .wallet-modal {
+        width: 95%;
+        margin: 1rem;
+    }
+
+    .hero-content h1 {
+        font-size: 2.5rem;
+    }
+
+    .live-stats {
+        grid-template-columns: 1fr;
+    }
+
+    .wallet-info {
+        padding: 0.6rem 1rem;
+        font-size: 0.8rem;
+    }
+
+    .wallet-balance {
+        padding-left: 0.5rem;
+    }
+
+    .large-connect-btn {
+        padding: 1.2rem 2rem;
+        font-size: 1rem;
+    }
+
+    .claim-all-btn {
+        padding: 0.6rem 1rem;
+        font-size: 0.9rem;
+    }
+
+    .abandoned-account {
+        flex-direction: column;
+        gap: 1rem;
+        align-items: stretch;
+    }
+    
+    .btn-claim {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+/* Enhanced Loading Animation */
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
+}
+
+.loading-overlay.show {
+    opacity: 1;
+    visibility: visible;
+}
+
+.loading-overlay.hidden {
+    opacity: 0;
+    visibility: hidden;
+}
+
+.loader {
+    text-align: center;
+    color: white;
+}
+
+.loader-spinner {
+    width: 50px;
+    height: 50px;
+    border: 3px solid rgba(92, 103, 255, 0.3);
+    border-top-color: var(--primary-color);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 1rem;
+}
+
+.loader-message {
+    font-size: 1.1rem;
+    font-weight: 500;
+    animation: messagePulse 2s ease-in-out infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes messagePulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+/* Enhanced Toast Notifications */
+.toast {
+    background: var(--card-color);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--button-radius);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    padding: 1rem;
+    margin-top: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    animation: slideIn 0.3s ease forwards;
+    position: relative;
+    overflow: hidden;
+    min-width: 300px;
+    max-width: 400px;
+}
+
+.toast::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 4px;
+    height: 100%;
+    background: var(--primary-color);
+}
+
+.toast.success::before {
+    background: #00B894;
+}
+
+.toast.error::before {
+    background: #E74C3C;
+}
+
+.toast.warning::before {
+    background: #F39C12;
+}
+
+.toast.info::before {
+    background: #3498DB;
+}
+
+.toast.slide-in {
+    animation: slideIn 0.3s ease forwards;
+}
+
+.toast.slide-out {
+    animation: slideOut 0.3s ease forwards;
+}
+
+@keyframes slideIn {
+    from { 
+        transform: translateX(100%); 
+        opacity: 0; 
+    }
+    to { 
+        transform: translateX(0); 
+        opacity: 1; 
+    }
+}
+
+@keyframes slideOut {
+    from { 
+        transform: translateX(0); 
+        opacity: 1; 
+    }
+    to { 
+        transform: translateX(100%); 
+        opacity: 0; 
+    }
+}
+
+/* Updated hover effects with pulse instead of movement */
+.connect-wallet, .large-connect-btn, .wallet-option {
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s ease;
+    border: 1px solid var(--glass-border);
+}
+
+.connect-wallet:hover, .large-connect-btn:hover, .wallet-option:hover {
+    transform: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 20px var(--glow-color);
+    animation: glow 2s infinite;
+}
+
+@keyframes glow {
+    0% {
+        box-shadow: 0 0 20px var(--glow-color);
+    }
+    50% {
+        box-shadow: 0 0 30px var(--hover-glow);
+    }
+    100% {
+        box-shadow: 0 0 20px var(--glow-color);
+    }
+}
+
+/* Improved wallet info display */
+.wallet-info {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.2rem;
+}
+
+.wallet-address {
+    color: var(--text-color);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.9rem;
+}
+
+.wallet-balance {
+    color: var(--primary-color);
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+/* Update connect wallet button states */
+.connect-wallet.hidden {
+    display: none;
+}
+
+#hero-connect.hidden {
+    display: none;
+}
+
+/* Updated nav-links layout */
+.nav-links {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+/* Improved animations */
+@keyframes fadeIn {
+    from { 
+        opacity: 0; 
+        transform: translateY(20px); 
+    }
+    to { 
+        opacity: 1; 
+        transform: translateY(0); 
+    }
+}
+
+.fade-in {
+    animation: fadeIn 0.5s ease-out forwards;
+}
+
+/* Enhanced Search Bar */
+.wallet-search {
+    position: relative;
+    margin: 1.5rem 0;
+}
+
+.wallet-search input {
+    width: 100%;
+    padding: 1rem 1rem 1rem 2.5rem;
+    background: var(--surface-color);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    color: var(--text-color);
+    font-size: 0.95rem;
+    transition: all 0.3s ease;
+}
+
+.wallet-search input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    background: rgba(255, 255, 255, 0.08);
+    box-shadow: 0 0 0 2px rgba(92, 103, 255, 0.1);
+    transform: translateY(-1px);
+}
+
+.wallet-search i {
+    position: absolute;
+    left: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-secondary);
+    pointer-events: none;
+    transition: color 0.3s ease;
+}
+
+.wallet-search input:focus + i {
+    color: var(--primary-color);
+}
+
+/* Scrollbar Styling */
+.wallet-options::-webkit-scrollbar {
+    width: 6px;
+}
+
+.wallet-options::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.wallet-options::-webkit-scrollbar-thumb {
+    background: var(--primary-color);
+    border-radius: 3px;
+}
+
+.wallet-options::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* Swap Container Styles */
+.swap-container {
+    max-width: 480px;
+    margin: 2rem auto;
+    padding: 1.5rem;
+    border-radius: 20px;
+}
+
+.swap-tabs {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.tab-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.tab-btn.active {
+    color: var(--primary-color);
+    border-bottom: 2px solid var(--primary-color);
+}
+
+.swap-box {
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 16px;
+    padding: 1.5rem;
+}
+
+.token-input {
+    margin-bottom: 1rem;
+}
+
+.token-input label {
+    display: block;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
+
+.input-group {
+    display: flex;
+    gap: 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 0.75rem;
+}
+
+.input-group input {
+    background: transparent;
+    border: none;
+    color: var(--text-color);
+    font-size: 1.2rem;
+    width: 100%;
+}
+
+.input-group input:focus {
+    outline: none;
+}
+
+.token-select {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    border-radius: 8px;
+    padding: 0.5rem 1rem;
+    color: var(--text-color);
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.token-select:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.token-select img {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+}
+
+.swap-direction {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background: var(--primary-color);
+    border: none;
+    border-radius: 50%;
+    margin: 1rem auto;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.swap-direction:hover {
+    transform: rotate(180deg);
+    background: var(--secondary-color);
+}
+
+.swap-details {
+    margin: 1.5rem 0;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 12px;
+}
+
+.detail-item {
+    display: flex;
+    justify-content: space-between;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
+
+.detail-item:last-child {
+    margin-bottom: 0;
+}
+
+.swap-button {
+    width: 100%;
+    background: var(--gradient);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    padding: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.swap-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 0 20px rgba(0, 184, 148, 0.2);
+}
+
+.swap-button:disabled {
+    background: var(--surface-color);
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* Add referral system styles */
+.referral-section {
+    flex: 2;
+    background: rgba(26, 26, 26, 0.95);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-border);
+    border-radius: 20px;
+    padding: 2rem;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.referral-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--glass-border);
+}
+
+.referral-title {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--text-color);
+}
+
+.referral-stats {
+    display: grid;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.stat-card {
+    background: var(--card-color);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 1.8rem;
+}
+
+.stat-label {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin-bottom: 0.8rem;
+}
+
+.stat-value {
+    color: var(--primary-color);
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
+.referral-link-container {
+    background: transparent !important;
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.referral-link-input {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+.referral-link {
+    background: transparent !important;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    padding: 0.8rem 1rem;
+    color: var(--text-color);
+    font-family: 'JetBrains Mono', monospace;
+    flex: 1;
+}
+
+.copy-button {
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 0.8rem 1.2rem;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.copy-button:hover {
+    background: var(--secondary-color);
+}
+
+.referral-info {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.referral-info strong {
+    color: var(--primary-color);
+}
+
+/* Style all font awesome icons */
+.fa {
+    padding: 20px;
+    font-size: 30px;
+    width: 50px;
+    text-align: center;
+    text-decoration: none;
+}
+
+/* Add a hover effect if you want */
+.fa:hover {
+    opacity: 0.7;
+}
+
+/* Set a specific color for each brand */
+
+/* Facebook */
+.fa-facebook {
+    background: #3B5998;
+    color: white;
+}
+
+/* Twitter */
+.fa-twitter {
+    background: #55ACEE;
+    color: white;
+}
+
+/* Announcement Banner */
+.announcement-banner {
+    background: var(--gradient);
+    color: white;
+    text-align: center;
+    padding: 6px 20px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    position: relative;
+    overflow: hidden;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: bannerGlow 3s ease-in-out infinite;
+}
+
+.announcement-banner::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    animation: bannerShine 4s ease-in-out infinite;
+}
+
+@keyframes bannerGlow {
+    0%, 100% { box-shadow: 0 0 20px rgba(92, 103, 255, 0.3); }
+    50% { box-shadow: 0 0 30px rgba(92, 103, 255, 0.5); }
+}
+
+@keyframes bannerShine {
+    0% { left: -100%; }
+    50% { left: 100%; }
+    100% { left: 100%; }
+}
+
+/* Adjust nav position to account for banner */
+nav {
+    top: 32px;
+}
+
+/* Adjust main content to account for banner */
+main {
+    margin-top: 32px;
+}
+
+
+
+/* Enhanced Button Animations */
+.btn-claim {
+    background: transparent;
+    border: none;
+    color: var(--primary-color);
+    cursor: pointer;
+    padding: 0.8rem;
+    font-size: 1.4rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    border-radius: 8px;
+    position: relative;
+    overflow: hidden;
+}
+
+.btn-claim::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    background: var(--primary-color);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    transition: width 0.3s ease, height 0.3s ease;
+    z-index: -1;
+}
+
+.btn-claim:hover::before {
+    width: 100%;
+    height: 100%;
+}
+
+.btn-claim:hover {
+    color: white;
+    transform: scale(1.1);
+}
+
+/* Enhanced Refresh Button */
+.refresh-btn {
+    background: transparent;
+    border: none;
+    color: var(--primary-color);
+    cursor: pointer;
+    padding: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    border-radius: 50%;
+}
+
+.refresh-btn:hover {
+    background: rgba(92, 103, 255, 0.1);
+    transform: scale(1.1);
+}
+
+.refresh-btn i {
+    font-size: 1.2rem;
+    transition: transform 0.3s ease;
+}
+
+/* Enhanced Copy Button */
+.copy-button {
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 0.8rem 1.2rem;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.copy-button::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.5s ease;
+}
+
+.copy-button:hover::before {
+    left: 100%;
+}
+
+.copy-button:hover {
+    background: var(--secondary-color);
+    transform: translateY(-1px);
+}
+
+/* Enhanced Account Cards with Hover Effects */
+.abandoned-account {
+    background: transparent;
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+}
+
+.abandoned-account::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(92, 103, 255, 0.1), transparent);
+    transition: left 0.5s ease;
+}
+
+.abandoned-account:hover::before {
+    left: 100%;
+}
+
+.abandoned-account:hover {
+    border-color: var(--primary-color);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(92, 103, 255, 0.15);
+}
+
+/* Enhanced Account Info */
+.account-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    flex: 1;
+}
+
+.account-address {
+    color: var(--text-secondary);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.95rem;
+    font-weight: 500;
+    transition: color 0.3s ease;
+}
+
+.account-balance {
+    color: var(--primary-color);
+    font-size: 1.1rem;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.abandoned-account:hover .account-address {
+    color: var(--text-color);
+}
+
+.abandoned-account:hover .account-balance {
+    transform: scale(1.05);
+}
+
+/* Enhanced Empty State */
+.empty-state {
+    text-align: center;
+    padding: 3rem 2rem;
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    color: var(--text-secondary);
+    background: var(--surface-color);
+    transition: all 0.3s ease;
+    animation: fadeIn 0.5s ease-out;
+}
+
+.empty-state:hover {
+    border-color: var(--primary-color);
+    transform: translateY(-2px);
+}
+
+.empty-state i {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+    color: var(--primary-color);
+    animation: pulse 2s infinite;
+}
+
+.empty-state p {
+    font-size: 1.1rem;
+    opacity: 0.8;
+}
+
+/* Enhanced Network Status */
+.network-selector {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--surface-color);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 0.5rem 1rem;
+    color: var(--text-color);
+    transition: all 0.3s ease;
+}
+
+.network-selector:hover {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 20px var(--glow-color);
+}
+
+/* Enhanced Wallet Info */
+.wallet-info {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.2rem;
+    transition: all 0.3s ease;
+}
+
+.wallet-address {
+    color: var(--text-color);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.9rem;
+    transition: color 0.3s ease;
+}
+
+.wallet-balance {
+    color: var(--primary-color);
+    font-size: 0.8rem;
+    font-weight: 700;
+    transition: all 0.3s ease;
+}
+
+.connect-wallet.connected:hover .wallet-address {
+    color: var(--primary-color);
+}
+
+.connect-wallet.connected:hover .wallet-balance {
+    transform: scale(1.05);
+}
+
+/* Enhanced Modal Animations */
+.wallet-modal {
+    background: var(--card-color);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--card-radius);
+    box-shadow: var(--card-shadow);
+    padding: 2rem;
+    max-width: 500px;
+    width: 90%;
+    transform: scale(0.9);
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.wallet-modal::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, rgba(92, 103, 255, 0.05), transparent);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.wallet-modal:hover::before {
+    opacity: 1;
+}
+
+.modal-overlay.show .wallet-modal {
+    transform: scale(1);
+}
+
+/* Enhanced Search Bar */
+.wallet-search {
+    position: relative;
+    margin: 1.5rem 0;
+}
+
+.wallet-search input {
+    width: 100%;
+    padding: 1rem 1rem 1rem 2.5rem;
+    background: var(--surface-color);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    color: var(--text-color);
+    font-size: 0.95rem;
+    transition: all 0.3s ease;
+}
+
+.wallet-search input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    background: rgba(255, 255, 255, 0.08);
+    box-shadow: 0 0 0 2px rgba(92, 103, 255, 0.1);
+    transform: translateY(-1px);
+}
+
+.wallet-search i {
+    position: absolute;
+    left: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-secondary);
+    pointer-events: none;
+    transition: color 0.3s ease;
+}
+
+.wallet-search input:focus + i {
+    color: var(--primary-color);
+}
+
+/* Enhanced Hero Badge */
+.hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(0, 184, 148, 0.1);
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    margin-bottom: 2rem;
+    position: relative;
+    overflow: hidden;
+    animation: badgeFloat 3s ease-in-out infinite;
+}
+
+.hero-badge::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(0, 184, 148, 0.2), transparent);
+    animation: badgeShine 3s ease-in-out infinite;
+}
+
+@keyframes badgeFloat {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+}
+
+@keyframes badgeShine {
+    0% { left: -100%; }
+    50% { left: 100%; }
+    100% { left: 100%; }
+}
+
+.hero-badge .pulse {
+    width: 8px;
+    height: 8px;
+    background: #00B894;
+    border-radius: 50%;
+    position: relative;
+    animation: continuousPulse 2s ease-in-out infinite;
+}
+
+.hero-badge .pulse::after {
+    content: '';
+    position: absolute;
+    top: -4px;
+    left: -4px;
+    right: -4px;
+    bottom: -4px;
+    border: 2px solid #00B894;
+    border-radius: 50%;
+    animation: continuousPulse 2s ease-in-out infinite;
+    animation-delay: 0.5s;
+}
+
+/* Enhanced Connect Button */
+.large-connect-btn {
+    background: var(--gradient);
+    color: white;
+    border: none;
+    padding: 1.5rem 3rem;
+    border-radius: 12px;
+    font-size: 1.2rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin: 0 auto;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+    animation: buttonGlow 2s ease-in-out infinite;
+}
+
+.large-connect-btn::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.5s ease;
+}
+
+.large-connect-btn:hover::before {
+    left: 100%;
+}
+
+.large-connect-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(92, 103, 255, 0.3);
+}
+
+@keyframes buttonGlow {
+    0%, 100% { box-shadow: 0 5px 15px rgba(92, 103, 255, 0.2); }
+    50% { box-shadow: 0 5px 25px rgba(92, 103, 255, 0.4); }
+}
+
+/* Enhanced Stats Cards */
+.stat-card {
+    background: transparent !important;
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+    animation: cardFloat 4s ease-in-out infinite;
+}
+
+.stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, rgba(92, 103, 255, 0.05), transparent);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.stat-card:hover::before {
+    opacity: 1;
+}
+
+.stat-card:hover {
+    border-color: var(--primary-color);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(92, 103, 255, 0.15);
+}
+
+@keyframes cardFloat {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-2px); }
+}
