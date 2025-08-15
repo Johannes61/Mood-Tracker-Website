@@ -1,351 +1,209 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AI Mood Mirror</title>
-  <meta name="description" content="Webcam-based facial expression analyzer with live mood chart. 100% front-end, ready for GitHub Pages." />
-  <style>
-    :root{
-      --bg:#0b0f1a; --panel:#101830; --ink:#e8eeff; --muted:#a4b3ff; --accent:#6ea8ff; --ok:#2ecc71; --warn:#f5a524; --bad:#ff4d4f;
-    }
-    *{box-sizing:border-box}
-    html,body{height:100%}
-    body{margin:0;background:radial-gradient(1200px 800px at 70% -10%,#1b2440 0%,#0b0f1a 60%,#060913 100%);color:var(--ink);font:14px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Inter,Helvetica,Arial}
-    .wrap{display:grid;grid-template-columns:1.1fr 1fr;gap:16px;max-width:1100px;margin:24px auto;padding:0 16px}
-    header{grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
-    h1{font-weight:800;letter-spacing:.3px;margin:0;font-size:22px}
-    .tag{opacity:.8;font-size:12px}
-    .card{background:linear-gradient(180deg,rgba(255,255,255,.02),rgba(255,255,255,.00));border:1px solid #2b365e55;border-radius:14px;box-shadow:0 10px 30px #0008;}
-    .panel{padding:14px}
-
-    /* left column: camera */
-    .cam{position:relative;overflow:hidden}
-    video,canvas#overlay{width:100%;height:auto;display:block;border-radius:12px}
-    video{filter:contrast(1.05) saturate(1.05);background:#000}
-    .hud{position:absolute;inset:auto 10px 10px 10px;display:flex;gap:10px;align-items:center;justify-content:space-between}
-    .pill{background:rgba(5,10,25,.65);backdrop-filter:blur(8px);border:1px solid #2b365e80;color:var(--ink);padding:8px 10px;border-radius:999px;display:flex;align-items:center;gap:8px}
-    .dot{width:8px;height:8px;border-radius:50%}
-    .dot.ok{background:var(--ok)}
-    .dot.bad{background:var(--bad)}
-    .btn{all:unset;cursor:pointer;background:linear-gradient(180deg,#1a2550,#121b3b);border:1px solid #2b365e;box-shadow:inset 0 1px 0 #7aa2ff22,0 10px 20px #0007;color:var(--ink);padding:8px 12px;border-radius:10px;font-weight:600}
-    .btn:disabled{opacity:.5;cursor:not-allowed}
-
-    /* right column: charts */
-    .charts{display:grid;gap:12px;grid-template-rows:auto 1fr}
-    .bar{padding:10px 12px}
-    .bar h3{margin:0 0 8px 0;font-size:13px;opacity:.9}
-    .bar .row{display:grid;grid-template-columns:90px 1fr 60px;gap:8px;align-items:center;margin:6px 0}
-    progress{width:100%;height:10px;-webkit-appearance:none;appearance:none;border-radius:8px;overflow:hidden;background:#2b365e44}
-    progress::-webkit-progress-bar{background:#2b365e44}
-    progress::-webkit-progress-value{background:linear-gradient(90deg,var(--accent),#b3d0ff)}
-
-    .chart-wrap{padding:8px 12px 12px}
-    canvas#trend{width:100%;height:260px;background:conic-gradient(from 180deg at 50% 120%, #0f1835, #0d1631);border-radius:10px;border:1px solid #2b365e55}
-
-    footer{grid-column:1/-1;opacity:.7;text-align:center;margin:8px 0 18px 0;font-size:12px}
-    a{color:#9bb7ff}
-
-    @media (max-width: 900px){
-      .wrap{grid-template-columns:1fr}
-    }
-  </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BUXO</title>
+  <link rel="icon" type="image/x-icon" href="https://i.ibb.co/sdXkffqs/Bullux4.png" />
+  <link rel="stylesheet" href="style.css?newcache0x" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.js"></script>
+  <script src="https://unpkg.com/@solana/wallet-adapter-base/lib/index.iife.js"></script>
+  <script src="https://unpkg.com/@solana/wallet-adapter-wallets/lib/index.iife.js"></script>
+  <script src="https://unpkg.com/@solana/spl-token@0.3.8/lib/index.iife.min.js"></script>
 </head>
-<body>
-  <div class="wrap">
-    <header>
-      <div>
-        <h1>AI Mood Mirror</h1>
-        <div class="tag">Live facial-expression analyzer — runs entirely in your browser.</div>
-      </div>
-      <div class="pill"><span id="statusDot" class="dot bad"></span><span id="statusText">Loading models…</span></div>
-    </header>
-
-    <section class="cam card">
-      <div class="panel" style="padding:10px 10px 0 10px">
-        <video id="video" autoplay playsinline muted></video>
-        <canvas id="overlay"></canvas>
-      </div>
-      <div class="hud">
-        <div class="pill" id="currentTop">Top mood: —</div>
-        <div style="display:flex; gap:8px; align-items:center">
-          <select id="deviceSelect" title="Choose camera" style="background:linear-gradient(180deg,#1a2550,#121b3b);border:1px solid #2b365e;color:var(--ink);padding:8px 10px;border-radius:10px">
-            <option>Loading cameras…</option>
-          </select>
-          <button id="startBtn" class="btn" title="(Re)start camera">Start</button>
-          <button id="flipBtn" class="btn" title="Flip camera">Flip</button>
-          <button id="snapBtn" class="btn" title="Save snapshot">Save PNG</button>
-        </div>
-      </div>
-        <div style="display:flex; gap:8px">
-          <button id="flipBtn" class="btn" title="Flip camera">Flip</button>
-          <button id="snapBtn" class="btn" title="Save snapshot">Save PNG</button>
-        </div>
-      </div>
-    </section>
-
-    <section class="charts">
-      <div class="card bar">
-        <h3>Live probabilities</h3>
-        <div id="bars"></div>
-      </div>
-      <div class="card chart-wrap">
-        <canvas id="trend"></canvas>
-      </div>
-    </section>
-
-    <footer>
-      Works offline after first load. No video leaves your device. Built with <a href="https://github.com/justadudewhohacks/face-api.js" target="_blank" rel="noreferrer">face-api.js</a> & Canvas.
-    </footer>
+<body class="dark-mode">
+  <div class="dynamic-bg"></div>
+  
+  <!-- Floating Particles -->
+  <div class="floating-particles">
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+  </div>
+  
+  <div class="announcement-banner">
   </div>
 
-  <!-- Face API (expression detection) -->
-  <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
-  <!-- Chart.js for the tiny trend graph -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <nav>
+    <a href="/" class="logo">
+      <img src="https://i.ibb.co/sdXkffqs/Bullux4.png" alt="Logo" border="0" />
+    </a>
+    <div class="nav-links">
+      <div class="social-links">
+<div style="display: flex; flex-wrap:wrap; align-items: center; justify-content: center;"><a href="https://x.com/buxohq?s=21" target="_blank" rel="noopener noreferrer" style="text-decoration:none;border:0;width:23px;height:23px;padding:0;margin:3px;color:#5C67FF;"><svg class="niftybutton-twitterx" style="display:block;fill:currentColor" data-donate="true" data-tag="twix" data-name="TwitterX" viewBox="0 0 512 512" preserveAspectRatio="xMidYMid meet"><title>Twitter X social icon</title>
+<path d="M 304.757 216.824 L 495.394 0 L 450.238 0 L 284.636 188.227 L 152.475 0 L 0 0 L 199.902 284.656 L 0 512 L 45.16 512 L 219.923 313.186 L 359.525 512 L 512 512 M 61.456 33.322 L 130.835 33.322 L 450.203 480.317 L 380.811 480.317 "></path>
+</svg></a><a href="https://t.me/BoxuHQ" target="_blank" rel="noopener noreferrer" style="text-decoration:none;border:0;width:23px;height:23px;padding:0;margin:3px;color:#5C67FF;"><svg class="niftybutton-telegram" style="display:block;fill:currentColor" data-donate="true" data-tag="tel" data-name="Telegram" viewBox="0 0 512 512" preserveAspectRatio="xMidYMid meet"><title>Telegram social icon</title>
+<path d="M 200.894531 323.863281 L 192.425781 442.988281 C 204.542969 442.988281 209.792969 437.78125 216.085938 431.53125 L 272.894531 377.238281 L 390.613281 463.445312 C 412.203125 475.476562 427.414062 469.140625 433.238281 443.585938 L 510.507812 81.515625 L 510.527344 81.492188 C 517.375 49.578125 498.988281 37.097656 477.953125 44.929688 L 23.765625 218.816406 C -7.230469 230.847656 -6.761719 248.128906 18.496094 255.957031 L 134.613281 292.074219 L 404.332031 123.308594 C 417.023438 114.902344 428.566406 119.550781 419.070312 127.957031 Z M 200.894531 323.863281 "></path>
+</svg></a></div>
+      </div>
+      <div class="network-selector">
+        <div class="status-dot"></div>
+        <select id="network-select">
+          <option value="mainnet">Mainnet</option>
+          <option value="devnet">Devnet</option>
+        </select>
+      </div>
+      <div class="wallet-info hidden" id="wallet-info">
+        <span class="wallet-address" id="wallet-address"></span>
+        <span class="wallet-balance" id="wallet-balance">0.0000 SOL</span>
+      </div>
+      <button class="connect-wallet" id="wallet-connect">
+        <i class="fas fa-plug"></i>
+        <span>Connect Wallet</span>
+      </button>
+    </div>
+  </nav>
 
-  <script>
-  // ====== CONFIG ======
-  const MODEL_URL = "https://justadudewhohacks.github.io/face-api.js/models"; // Host your own later: /models
-  const EXPRESSIONS = ["neutral","happy","sad","angry","fearful","disgusted","surprised"]; // face-api order
+  <main>
+    <section id="pre-connect" class="active">
+      <div class="hero-content">
+        <div class="hero-badge">
+          <span class="pulse"></span>
+          <span>Live on Mainnet</span>
+        </div>
+        <h1>Reclaim Your <span class="gradient-text">Solana</span></h1>
+        <p class="hero-subtitle">Find and close abandoned accounts to reclaim your SOL.</p>
+        <div class="connect-prompt">
+          <button class="large-connect-btn" id="hero-connect">
+            <i class="fas fa-wallet"></i>
+            Connect Wallet to Start
+          </button>
+        </div>
+      </div>
+    </section>
 
-  // ====== DOM ======
-  const video = document.getElementById('video');
-  const overlay = document.getElementById('overlay');
-  const statusDot = document.getElementById('statusDot');
-  const statusText = document.getElementById('statusText');
-  const barsHost = document.getElementById('bars');
-  const currentTop = document.getElementById('currentTop');
-  const flipBtn = document.getElementById('flipBtn');
-  const snapBtn = document.getElementById('snapBtn');
-  const startBtn = document.getElementById('startBtn');
-  const deviceSelect = document.getElementById('deviceSelect');
+    <section id="post-connect" class="hidden">
+      <div class="dashboard-container">
+        <div class="abandoned-accounts">
+          <div class="accounts-header">
+            <h2>Abandoned Accounts</h2>
+            <button class="refresh-btn" id="refresh-accounts">
+              <i class="fas fa-sync-alt"></i>
+            </button>
+          </div>
+          <div id="abandoned-accounts" class="accounts-list">
+          </div>
+          <div class="claim-all-container">
+            <button class="claim-all-button" id="claim-all">
+              <i class="fas fa-hand-holding-usd"></i>
+              Claim All (<span id="total-amount">0</span> SOL)
+            </button>
+          </div>
+        </div>
 
-  // ====== STATE ======
-  let stream;
-  let usingFront = true;
-  let currentDeviceId = null; // try user-facing first
-  let chart;
-  const historyLen = 120; // ~ last 60s if sampling ~500ms
-  const history = EXPRESSIONS.reduce((acc,k)=>{acc[k]=Array(historyLen).fill(0);return acc;},{});
+        <div class="referral-section">
+          <div class="referral-header">
+            <h2>Referral Program (NW)</h2>
+          </div>
+          <div class="referral-content">
+            <div class="referral-stats">
+              <div class="stat-card">
+                <div class="stat-label">Total Referrals</div>
+                <div class="stat-value" id="referral-count">0</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Total Earnings</div>
+                <div class="stat-value" id="referral-earnings">0 SOL</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Pending Rewards</div>
+                <div class="stat-value" id="pending-rewards">0 SOL</div>
+              </div>
+            </div>
+            
+            <div class="referral-link-container">
+              <div class="referral-link-input">
+                <input type="text" class="referral-link" id="referral-link" readonly>
+                <button class="copy-button" id="copy-referral">
+                  <i class="fas fa-copy"></i>
+                  Copy
+                </button>
+              </div>
+              <p class="referral-info">
+                Share your referral link and earn <strong>35%</strong> of the fees when users claim accounts through your link!
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
 
-  // ====== UI: build probability bars ======
-  function makeBars(){
-    barsHost.innerHTML = '';
-    EXPRESSIONS.forEach(name => {
-      const row = document.createElement('div'); row.className='row';
-      const label = document.createElement('div'); label.textContent = name;
-      const prog = document.createElement('progress'); prog.max = 1; prog.value = 0; prog.id = `bar-${name}`;
-      const pct = document.createElement('div'); pct.id = `pct-${name}`; pct.style.textAlign='right'; pct.style.opacity=.9; pct.textContent='0%';
-      row.append(label, prog, pct);
-      barsHost.appendChild(row);
-    });
-  }
+    <section id="dashboard" class="dashboard-section hidden">
+      <div class="dashboard-container">
+        <div class="accounts-section">
+          <div class="accounts-header">
+            <h2 class="accounts-title">Abandoned Accounts</h2>
+            <button class="refresh-btn" id="refresh-accounts">
+              <i class="fas fa-sync-alt"></i>
+              Refresh
+            </button>
+          </div>
+          
+          <div id="accounts-list" class="accounts-list">
+          </div>
+          
+          <div id="empty-state" class="empty-state hidden">
+            <i class="fas fa-check-circle"></i>
+            <p>No abandoned accounts found</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
 
-  // ====== Camera control ======
-  async function startCamera(deviceId){
-    if(stream){ stream.getTracks().forEach(t=>t.stop()); }
-    const videoConstraints = deviceId ? {deviceId: {exact: deviceId}} : { facingMode: usingFront? 'user':'environment', width:{ideal: 960}, height:{ideal: 540} };
-    const constraints = { audio:false, video: videoConstraints };
-    stream = await navigator.mediaDevices.getUserMedia(constraints);
-    video.srcObject = stream;
-    await new Promise(r=> video.onloadedmetadata = r);
-    await video.play();
-    overlay.width = video.videoWidth; overlay.height = video.videoHeight;
-    const track = stream.getVideoTracks()[0];
-    const settings = track && track.getSettings ? track.getSettings() : {};
-    currentDeviceId = settings.deviceId || deviceId || null;
-    startBtn.disabled = true;
-  }
+  <div class="modal-overlay" id="wallet-modal-overlay">
+    <div class="wallet-modal" id="wallet-modal">
+      <div class="wallet-modal-header">
+        <h3 class="wallet-modal-title">Connect Wallet</h3>
+        <button class="close-modal" id="close-modal">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      
+      <div class="wallet-search">
+        <input type="text" id="wallet-search" placeholder="Search wallets...">
+        <i class="fas fa-search"></i>
+      </div>
+      
+      <div class="wallet-options" id="wallet-options">
+      </div>
+    </div>
+  </div>
 
-  flipBtn.onclick = async()=>{ usingFront = !usingFront; await startCamera(); };
-  startBtn.onclick = async()=>{ try{ await startCamera(currentDeviceId || undefined); setStatus(true,'Live'); }catch(e){ handleCameraError(e);} };
-  deviceSelect.onchange = async()=>{ const id = deviceSelect.value; if(id && id !== 'null'){ try{ await startCamera(id); }catch(e){ handleCameraError(e);} } };
+  <div class="loading-overlay hidden" id="loading-overlay">
+    <div class="loader">
+      <div class="loader-spinner"></div>
+      <p class="loader-message">Processing...</p>
+    </div>
+  </div>
 
-  snapBtn.onclick = ()=>{
-    const snap = document.createElement('canvas');
-    snap.width = overlay.width; snap.height = overlay.height;
-    const ctx = snap.getContext('2d');
-    ctx.drawImage(video,0,0); // frame
-    ctx.drawImage(overlay,0,0); // landmarks overlay
-    const url = snap.toDataURL('image/png');
-    const a = document.createElement('a'); a.href = url; a.download = `mood-${Date.now()}.png`; a.click();
-  };
+  <div class="toast-container"></div>
 
-  // ====== Trend chart ======
-  function initChart(){
-    const ctx = document.getElementById('trend');
-    chart = new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: Array(historyLen).fill(''),
-        datasets: EXPRESSIONS.map((name,i)=>({
-          label: name,
-          data: history[name],
-          tension: 0.25,
-          pointRadius: 0,
-          borderWidth: 1.5,
-        }))
-      },
-      options: {
-        responsive:true, maintainAspectRatio:false,
-        plugins:{ legend:{labels:{color:'#cfe2ff', boxWidth:10, boxHeight:2}}, tooltip:{enabled:true} },
-        scales:{
-          x:{ ticks:{display:false}, grid:{display:false}, border:{display:false} },
-          y:{ min:0, max:1, ticks:{display:false}, grid:{color:'#2b365e33'}, border:{display:false} }
-        }
-      }
-    });
-  }
-  
-  async function listCameras(){
-    try{
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const cams = devices.filter(d=>d.kind==='videoinput');
-      deviceSelect.innerHTML = '';
-      cams.forEach((c,idx)=>{
-        const opt = document.createElement('option');
-        opt.value = c.deviceId || '';
-        opt.textContent = c.label || `Camera ${idx+1}`;
-        deviceSelect.appendChild(opt);
-      });
-      if(cams.length===0){
-        const opt = document.createElement('option'); opt.textContent='No cameras found'; opt.value='null'; deviceSelect.appendChild(opt);
-      }
-    }catch(err){ console.warn('enumerateDevices failed', err); }
-  }
-      }
-    });
-  }
+  <template id="empty-state-template">
+    <div class="empty-state fade-in">
+      <i class="fas fa-check-circle"></i>
+      <p>No abandoned accounts found</p>
+    </div>
+  </template>
 
-  function pushHistory(probs){
-    EXPRESSIONS.forEach(k=>{
-      history[k].push(probs[k]||0);
-      if(history[k].length>historyLen) history[k].shift();
-    });
-    chart.update('none');
-  }
+  <template id="wallet-option-template">
+    <div class="wallet-option" data-wallet-id="">
+      <div class="wallet-option-left">
+        <img src="" alt="" onerror="handleImageError(this)">
+        <span class="wallet-option-name"></span>
+      </div>
+      <span class="wallet-status"></span>
+    </div>
+  </template>
 
-  // ====== Overlay drawing ======
-  function drawOverlay(detection){
-    const ctx = overlay.getContext('2d');
-    ctx.clearRect(0,0,overlay.width,overlay.height);
-    if(!detection) return;
-
-    // Draw box
-    const { x, y, width, height } = detection.detection.box;
-    ctx.strokeStyle = 'rgba(110,168,255,.9)';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(x,y,width,height);
-
-    // Draw landmarks (sparse)
-    const lm = detection.landmarks.positions;
-    ctx.fillStyle = 'rgba(110,168,255,.85)';
-    for(let i=0;i<lm.length;i+=5){
-      const p = lm[i];
-      ctx.beginPath(); ctx.arc(p.x,p.y,1.5,0,Math.PI*2); ctx.fill();
-    }
-
-    // Label top expression
-    const expr = detection.expressions.asSortedArray()[0];
-    ctx.fillStyle = 'rgba(5,10,25,.7)';
-    ctx.fillRect(x, y-24, 120, 20);
-    ctx.strokeStyle = '#2b365e';
-    ctx.strokeRect(x, y-24, 120, 20);
-    ctx.fillStyle = '#d9e6ff';
-    ctx.font = '12px ui-sans-serif';
-    ctx.fillText(`${expr.expression}: ${(expr.probability*100).toFixed(0)}%`, x+8, y-10);
-  }
-
-  // ====== Detection loop ======
-  async function detectLoop(){
-    if(!stream){ setTimeout(()=>requestAnimationFrame(detectLoop), 200); return; }
-    if(video.readyState >= 2){
-      const result = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({scoreThreshold:0.5}))
-        .withFaceLandmarks()
-        .withFaceExpressions();
-
-      if(result){
-        drawOverlay(result);
-        const probs = result.expressions;
-        // update bars
-        let topName = '—', topVal = 0;
-        EXPRESSIONS.forEach(name=>{
-          const v = probs[name] || 0;
-          const bar = document.getElementById(`bar-${name}`);
-          const pct = document.getElementById(`pct-${name}`);
-          if(bar){ bar.value = v; }
-          if(pct){ pct.textContent = `${Math.round(v*100)}%`; }
-          if(v>topVal){ topVal=v; topName=name; }
-        });
-        currentTop.textContent = `Top mood: ${topName} ${Math.round(topVal*100)}%`;
-        pushHistory(probs);
-        setStatus(true, 'Live');
-      } else {
-        const ctx = overlay.getContext('2d');
-        ctx.clearRect(0,0,overlay.width,overlay.height);
-        setStatus(false, 'No face detected');
-      }
-    }
-    // aim for ~10–12fps processing to keep CPU chill
-    setTimeout(()=>requestAnimationFrame(detectLoop), 80);
-  }
-
-  function setStatus(ok, text){
-    statusDot.className = 'dot ' + (ok ? 'ok' : 'bad');
-    statusText.textContent = text;
-  }
-
-  // ====== Boot ======
-  async function boot(){
-    makeBars();
-    initChart();
-
-    await listCameras();
-    startBtn.disabled = false;
-
-    try{
-      await startCamera();
-    } catch(e){
-      handleCameraError(e);
-      // user can press Start after fixing
-    }
-
-    setStatus(false, 'Loading models…');
-    await Promise.all([
-      faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-      faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-      faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
-    ]);
-
-    setStatus(true, 'Models ready');
-    detectLoop();
-  }
-
-  function handleCameraError(e){
-    console.warn('Camera error', e);
-    let msg = 'Camera blocked';
-    if(e && e.name === 'NotAllowedError') msg = 'Camera permission denied. Click the lock icon in the address bar → allow camera, then press Start.';
-    else if(e && e.name === 'NotFoundError') msg = 'No camera found. Plug one in or select a different device.';
-    else if(e && e.name === 'NotReadableError') msg = 'Camera is in use by another app. Close it and press Start.';
-    else if(e && e.message) msg = e.message;
-    setStatus(false, msg);
-    startBtn.disabled = false;
-  }
-
-  // PWA-ish offline cache (very small & optional)
-  if('serviceWorker' in navigator){
-    window.addEventListener('load',()=>{
-      const sw = URL.createObjectURL(new Blob([`
-        const CACHE='aimoodmirror-v1';
-        self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(['./'])))});
-        self.addEventListener('fetch',e=>{e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request)))});
-      `],{type:'text/javascript'}));
-      navigator.serviceWorker.register(sw);
-    });
-  }
-
-  boot();
-  </script>
+  <script src="script.js"></script>
 </body>
 </html>
