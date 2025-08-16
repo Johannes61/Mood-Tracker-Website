@@ -1,394 +1,377 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { motion, useMotionValue, useSpring } from "framer-motion";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { ArrowRight, Zap, Shield, Sparkles, Gauge, Rocket, TerminalSquare, Cpu, Layers, Github, Mail } from "lucide-react";
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Buxo — Black Tech</title>
+  <style>
+    :root{
+      --bg:#000;
+      --fg:#fff;
+      --muted:#a1a1aa; /* zinc-400 */
+      --panel:rgba(255,255,255,0.06);
+      --panel-2:rgba(255,255,255,0.04);
+      --border:rgba(255,255,255,0.12);
+      --ring:rgba(255,255,255,0.35);
+      --grad-a:#a78bfa; /* purple-400 */
+      --grad-b:#60a5fa; /* blue-400 */
+      --grad-c:#22d3ee; /* cyan-400 */
+      --shadow:0 10px 30px rgba(0,0,0,0.4);
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      font-family: ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Inter,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji";
+      background: var(--bg);
+      color: var(--fg);
+      line-height:1.6;
+      -webkit-font-smoothing:antialiased;
+      overflow-x:hidden;
+    }
+    /* Background grid */
+    .grid-bg{position:fixed;inset:0;pointer-events:none;z-index:-2;
+      background:
+        linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px) 0 0/40px 40px,
+        linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px) 0 0/40px 40px;
+    }
+    /* Gradient orbs */
+    .orbs{position:fixed;inset:0;pointer-events:none;z-index:-1;mix-blend:screen}
+    .orb{position:absolute;border-radius:999px;filter:blur(40px);opacity:.32;mix-blend-mode:screen;will-change:transform}
 
-// Utility: random within range
-const rand = (min: number, max: number) => Math.random() * (max - min) + min;
+    header{position:sticky;top:0;backdrop-filter:blur(8px);background:rgba(0,0,0,.4);border-bottom:1px solid var(--border);z-index:20}
+    .wrap{max-width:1200px;margin:0 auto;padding:18px 20px;}
+    .row{display:flex;align-items:center;justify-content:space-between;gap:16px}
+    .brand{display:flex;align-items:center;gap:10px;font-weight:600;letter-spacing:.4px}
+    .brand .logo{width:28px;height:28px;border-radius:7px;background:linear-gradient(135deg,var(--grad-b),#f0abfc,var(--grad-c))}
+    nav{display:none;gap:22px;color:#d4d4d8}
+    nav a{color:inherit;text-decoration:none}
+    nav a:hover{color:#fff}
+    .actions{display:flex;gap:10px}
+    .btn{appearance:none;display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 14px;border-radius:10px;border:1px solid transparent;background:#fff;color:#000;font-weight:600;cursor:pointer}
+    .btn:hover{filter:brightness(.92)}
+    .btn.ghost{background:transparent;color:#e4e4e7;border-color:var(--border)}
 
-// Animated gradient orb component
-function GradientOrb({ size = 320, hue = 260, saturation = 80, lightness = 60, initialX = 0, initialY = 0, duration = 16 }) {
-  const x = useMotionValue(initialX);
-  const y = useMotionValue(initialY);
-  const xs = useSpring(x, { stiffness: 30, damping: 20 });
-  const ys = useSpring(y, { stiffness: 30, damping: 20 });
+    .section{padding:72px 20px}
+    .center{text-align:center}
+    .hero h1{font-size: clamp(32px, 6vw, 64px);line-height:1.1;margin:.4em 0;letter-spacing:-.02em}
+    .gradient-text{background:linear-gradient(90deg,#f0abfc,var(--grad-b),var(--grad-c));-webkit-background-clip:text;background-clip:text;color:transparent}
+    .muted{color:#d4d4d8}
+    .pill{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border);padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.05);font-size:12px;color:#d4d4d8}
+    .stack{display:flex;flex-direction:column;align-items:center;gap:14px}
+    .btn-row{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
 
-  useEffect(() => {
-    let mounted = true;
-    const loop = () => {
-      if (!mounted) return;
-      x.set(rand(-40, 40));
-      y.set(rand(-40, 40));
-      setTimeout(loop, rand(duration * 500, duration * 1200));
+    pre.code{margin:22px auto 0;max-width:720px;background:rgba(0,0,0,.6);border:1px solid var(--border);padding:16px;border-radius:14px;box-shadow:var(--shadow);color:#e5e7eb;overflow:auto}
+    pre.code .caret{animation:pulse 1s steps(2,end) infinite}
+    @keyframes pulse{to{opacity:.2}}
+
+    .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;max-width:720px;margin:24px auto 0}
+    .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:18px;box-shadow:var(--shadow)}
+    .card h3{margin:0;font-size:28px}
+
+    .features{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+    .panel-grad{background:linear-gradient(180deg, rgba(255,255,255,.09), rgba(255,255,255,.02));border:1px solid var(--border);border-radius:16px;padding:18px}
+
+    .two-col{display:grid;grid-template-columns:1fr;gap:16px}
+    .playground{height:260px;border:1px solid var(--border);border-radius:16px;background:rgba(0,0,0,.5);position:relative;overflow:hidden}
+    .p-blob{position:absolute;border-radius:999px;filter:blur(22px);will-change:transform}
+
+    .pricing{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+    .price{position:relative}
+    .badge{position:absolute;right:10px;top:10px;background:#fff;color:#000;padding:4px 8px;border-radius:999px;font-size:10px;font-weight:700}
+    .price h4{margin:0 0 4px}
+    .price .amount{font-size:34px;font-weight:700}
+    .price ul{padding-left:18px;margin:10px 0 16px;color:#d4d4d8}
+
+    .faq{max-width:900px;margin:0 auto}
+    .faq-item{border:1px solid var(--border);border-radius:14px;padding:14px;background:var(--panel);}
+    .faq-q{display:flex;justify-content:space-between;align-items:center;cursor:pointer}
+    .faq-a{max-height:0;overflow:hidden;transition:max-height .3s ease, opacity .3s ease;opacity:0;color:#d4d4d8}
+    .faq-item.open .faq-a{max-height:160px;opacity:1;margin-top:8px}
+
+    footer{border-top:1px solid var(--border);background:rgba(0,0,0,.6)}
+
+    @media(min-width:768px){
+      nav{display:flex}
+      .two-col{grid-template-columns:1fr 1fr}
+    }
+    @media(max-width:720px){
+      .stats{grid-template-columns:1fr}
+      .features{grid-template-columns:1fr}
+      .pricing{grid-template-columns:1fr}
+    }
+  </style>
+</head>
+<body>
+  <!-- Backdrops -->
+  <div class="grid-bg"></div>
+  <div class="orbs" id="orbs"></div>
+
+  <header>
+    <div class="wrap row">
+      <div class="brand"><div class="logo"></div><span>Buxo</span><small style="opacity:.6;margin-left:6px;border:1px solid var(--border);padding:2px 6px;border-radius:999px">Alpha</small></div>
+      <nav>
+        <a href="#features">Features</a>
+        <a href="#runtime">Runtime</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#faq">FAQ</a>
+      </nav>
+      <div class="actions">
+        <button class="btn ghost" onclick="window.open('#','_self')">GitHub</button>
+        <button class="btn" onclick="document.getElementById('runtime').scrollIntoView({behavior:'smooth'})">Launch App →</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- HERO -->
+    <section class="section hero center">
+      <div class="stack">
+        <span class="pill">✨ Introducing a faster way to ship</span>
+        <h1>Build dynamic experiences on a <span class="gradient-text">black‑tech canvas</span></h1>
+        <p class="muted" style="max-width:720px">Buxo is a reactive runtime and UI toolkit for crafting real‑time, GPU‑powered web apps. Animated, composable, and secure by design.</p>
+        <div class="btn-row">
+          <button class="btn" onclick="alert('Getting started…')">Get Started ⚡</button>
+          <button class="btn ghost" onclick="document.getElementById('waitlist').scrollIntoView({behavior:'smooth'})">Contact Sales ✉️</button>
+        </div>
+        <pre class="code" id="typewriter"></pre>
+      </div>
+
+      <div class="stats">
+        <div class="card center">
+          <h3 id="users">0</h3>
+          <div class="muted">Early users</div>
+        </div>
+        <div class="card center">
+          <h3 id="latency">0ms</h3>
+          <div class="muted">Median latency</div>
+        </div>
+        <div class="card center">
+          <h3 id="apicalls">0</h3>
+          <div class="muted">API calls today</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FEATURES -->
+    <section id="features" class="section">
+      <div class="wrap">
+        <div class="features">
+          <div class="panel-grad">
+            <h3>⚡ Real‑time Motion</h3>
+            <p class="muted">GPU‑accelerated transforms for liquid interactions.</p>
+          </div>
+          <div class="panel-grad">
+            <h3>🛡️ Secure by Design</h3>
+            <p class="muted">Built‑in auth, signed actions, and per‑component isolation.</p>
+          </div>
+          <div class="panel-grad">
+            <h3>📈 Ultra‑Low Latency</h3>
+            <p class="muted">Sub‑100ms data streams at global scale.</p>
+          </div>
+        </div>
+        <div class="two-col" style="margin-top:16px">
+          <div class="panel-grad">
+            <h3>🧩 Composable UI Primitives</h3>
+            <p class="muted">Drop‑in building blocks for dashboards, canvases, and control panels.</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+              <span class="pill">Canvas</span>
+              <span class="pill">Signals</span>
+              <span class="pill">Workers</span>
+              <span class="pill">3D</span>
+            </div>
+          </div>
+          <div class="panel-grad" id="runtime">
+            <div class="row" style="color:#d4d4d8;font-size:14px;margin-bottom:8px">🖥️ Live Playground</div>
+            <div class="playground" id="playground">
+              <div class="p-blob" id="pb1" style="width:160px;height:160px;background:radial-gradient(closest-side, #9b5cff, transparent)"></div>
+              <div class="p-blob" id="pb2" style="width:120px;height:120px;background:radial-gradient(closest-side, #00e0ff, transparent)"></div>
+              <div class="p-blob" id="pb3" style="width:190px;height:190px;background:radial-gradient(closest-side, #00ff94, transparent)"></div>
+              <div style="position:absolute;inset:auto 12px 12px auto;border:1px solid var(--border);background:rgba(0,0,0,.55);backdrop-filter:blur(6px);padding:8px 10px;border-radius:8px;color:#d4d4d8;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;font-size:12px">Move your mouse — the blobs follow.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PRICING -->
+    <section id="pricing" class="section">
+      <div class="wrap pricing">
+        <div class="panel-grad price">
+          <h4>Hacker</h4>
+          <div class="muted">For tinkering and demos</div>
+          <div class="amount">$0<span style="font-size:12px;color:#a1a1aa">/mo</span></div>
+          <ul>
+            <li>1 project</li>
+            <li>Free tier runtime</li>
+            <li>Community support</li>
+          </ul>
+          <button class="btn" style="width:100%">Start Free</button>
+        </div>
+        <div class="panel-grad price" style="background:linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.05))">
+          <span class="badge">Popular</span>
+          <h4>Startup</h4>
+          <div class="muted">For small teams</div>
+          <div class="amount">$29<span style="font-size:12px;color:#a1a1aa">/mo</span></div>
+          <ul>
+            <li>Unlimited projects</li>
+            <li>Edge runtime</li>
+            <li>Email support</li>
+          </ul>
+          <button class="btn" style="width:100%">Start Trial</button>
+        </div>
+        <div class="panel-grad price">
+          <h4>Enterprise</h4>
+          <div class="muted">For scale</div>
+          <div class="amount">Custom<span style="font-size:12px;color:#a1a1aa">/mo</span></div>
+          <ul>
+            <li>SLA & SSO</li>
+            <li>Private regions</li>
+            <li>Dedicated support</li>
+          </ul>
+          <button class="btn" style="width:100%">Contact Us</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- WAITLIST -->
+    <section id="waitlist" class="section">
+      <div class="wrap two-col">
+        <div class="panel-grad">
+          <h3>Join the Waitlist</h3>
+          <p class="muted">Be first to try Buxo in private beta.</p>
+          <form onsubmit="event.preventDefault(); alert('Thanks! We\'ll be in touch.');">
+            <div class="row" style="gap:8px;margin-top:10px">
+              <input required type="email" placeholder="you@company.com" style="flex:1;min-width:0;background:rgba(0,0,0,.4);border:1px solid var(--border);border-radius:10px;padding:10px 12px;color:#fff;outline:none" onfocus="this.style.boxShadow='0 0 0 3px var(--ring)';" onblur="this.style.boxShadow='none';"/>
+              <button class="btn" type="submit">Notify me</button>
+            </div>
+            <div class="muted" style="font-size:12px;margin-top:6px">No spam. Unsubscribe any time.</div>
+          </form>
+        </div>
+        <div class="panel-grad">
+          <h3>Why Buxo?</h3>
+          <p class="muted">Designed for speed, motion, and developer joy. Bring black‑tech aesthetics to life with tiny, dependency‑free building blocks.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ -->
+    <section id="faq" class="section">
+      <div class="wrap faq">
+        <h3 style="margin-top:0">FAQ</h3>
+        <div class="grid" style="display:grid;gap:12px;grid-template-columns:1fr 1fr">
+          <div class="faq-item"><div class="faq-q"><span>What is Buxo?</span><span>+</span></div><div class="faq-a">A dynamic web runtime + UI kit focused on black‑tech aesthetics, motion, and speed.</div></div>
+          <div class="faq-item"><div class="faq-q"><span>Can I self host?</span><span>+</span></div><div class="faq-a">Yes — targets edge workers, serverless, or bare metal with the same CLI.</div></div>
+          <div class="faq-item"><div class="faq-q"><span>Is there an SDK?</span><span>+</span></div><div class="faq-a">TypeScript‑first SDK with vanilla bindings.</div></div>
+          <div class="faq-item"><div class="faq-q"><span>Do you support 3D?</span><span>+</span></div><div class="faq-a">Experimental WebGPU + Three.js bridges are in beta.</div></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap row" style="flex-wrap:wrap;gap:12px">
+      <div class="muted">© <span id="year"></span> Buxo — All rights reserved.</div>
+      <div class="row" style="gap:12px;color:#a1a1aa;font-size:14px">
+        <a href="#" style="color:inherit;text-decoration:none">Privacy</a>
+        <a href="#" style="color:inherit;text-decoration:none">Terms</a>
+        <a href="#" style="color:inherit;text-decoration:none">Security</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // --- Typewriter ---
+    const typeLines = [
+      "// Install",
+      "npm i buxo --save",
+      "",
+      "// Hello world runtime",
+      "import { start, orb, animate } from 'buxo'",
+      "const app = start('#app')",
+      "const dot = orb({ hue: 280, size: 64 })",
+      "animate(dot, { x: [0, 160, -120, 0], y: [0, -60, 80, 0] })"
+    ];
+    (function typewriter(){
+      const pre = document.getElementById('typewriter');
+      const text = typeLines.join("\n");
+      let i = 0; pre.textContent = '';
+      const tick = () => {
+        pre.textContent = text.slice(0, i++) + '\n';
+        const caret = document.createElement('span');
+        caret.className = 'caret'; caret.textContent = '█'; pre.appendChild(caret);
+        if(i <= text.length) requestAnimationFrame(tick);
+      }; tick();
+    })();
+
+    // --- Animated Orbs (softly drifting gradient circles) ---
+    const orbSpec = [
+      { size:420, hue:210, sat:92, light:60, x:-120, y:-100, speed:0.04 },
+      { size:360, hue:280, sat:92, light:64, x:160,  y:-40,  speed:0.03 },
+      { size:500, hue:160, sat:90, light:55, x:-40,  y:160,  speed:0.02 },
+      { size:460, hue:330, sat:82, light:62, x:220,  y:220,  speed:0.025 }
+    ];
+    const orbs = document.getElementById('orbs');
+    const rand = (a,b)=>Math.random()*(b-a)+a;
+    const createOrb = (o)=>{
+      const d = document.createElement('div');
+      d.className = 'orb';
+      d.style.width = d.style.height = o.size + 'px';
+      d.style.background = `radial-gradient(closest-side, hsl(${o.hue} ${o.sat}% ${o.light}%), transparent 70%)`;
+      orbs.appendChild(d); return d;
     };
-    loop();
-    return () => {
-      mounted = false;
-    };
-  }, [duration, x, y]);
-
-  const style: React.CSSProperties = {
-    width: size,
-    height: size,
-    filter: "blur(40px)",
-    background: `radial-gradient(closest-side, hsl(${hue} ${saturation}% ${lightness}%), transparent 70%)`,
-  };
-
-  return (
-    <motion.div
-      aria-hidden
-      className="pointer-events-none absolute rounded-full mix-blend-screen opacity-30"
-      style={{ ...style, x: xs, y: ys }}
-    />
-  );
-}
-
-// Tiny helper to simulate a growing stat
-function useCountingStat(to: number, ms = 2600) {
-  const [val, setVal] = useState(0);
-  useEffect(() => {
-    const start = performance.now();
-    let raf = 0;
-    const step = (t: number) => {
-      const p = Math.min(1, (t - start) / ms);
-      setVal(Math.floor(to * (1 - Math.pow(1 - p, 3))));
-      if (p < 1) raf = requestAnimationFrame(step);
-    };
-    raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
-  }, [to, ms]);
-  return val;
-}
-
-// Typewriter effect for the hero code block
-function Typewriter({ lines, speed = 28 }) {
-  const [text, setText] = useState("");
-  const flat = useMemo(() => lines.join("\n"), [lines]);
-  useEffect(() => {
-    let i = 0;
-    const id = setInterval(() => {
-      setText(flat.slice(0, i++));
-      if (i > flat.length) {
-        clearInterval(id);
+    const instances = orbSpec.map(o=>({el:createOrb(o), ...o, tx:o.x, ty:o.y}));
+    function moveOrbs(){
+      for(const o of instances){
+        // drift target occasionally
+        if(Math.random() < 0.01){ o.tx += rand(-60,60); o.ty += rand(-60,60); }
+        // ease towards target
+        o.x += (o.tx - o.x) * o.speed; o.y += (o.ty - o.y) * o.speed;
+        o.el.style.transform = `translate(calc(50vw + ${o.x}px), calc(40vh + ${o.y}px))`;
       }
-    }, speed);
-    return () => clearInterval(id);
-  }, [flat, speed]);
-  return (
-    <pre className="mt-6 w-full max-w-2xl overflow-hidden rounded-xl border border-white/10 bg-black/60 p-5 font-mono text-sm text-zinc-200 shadow-[0_0_0_1px_rgba(255,255,255,0.04)]">
-      {text}
-      <span className="animate-pulse">█</span>
-    </pre>
-  );
-}
+      requestAnimationFrame(moveOrbs);
+    } moveOrbs();
 
-export default function Buxo() {
-  const users = useCountingStat(12400);
-  const latency = useCountingStat(23);
-  const apiCalls = useCountingStat(820000);
+    // --- Counters (animate when visible) ---
+    const counters = [
+      { id:'users', to:12400, format:v=>v.toLocaleString() },
+      { id:'latency', to:23, format:v=>v+"ms" },
+      { id:'apicalls', to:820000, format:v=>v.toLocaleString() }
+    ];
+    const io = new IntersectionObserver((entries)=>{
+      entries.forEach(entry=>{
+        if(entry.isIntersecting){
+          const el = entry.target; const target = +el.dataset.to; let cur = 0; const dur = 1800; const start = performance.now();
+          const step = (t)=>{ const p=Math.min(1,(t-start)/dur); cur = Math.floor(target*(1-Math.pow(1-p,3))); el.textContent = el.dataset.format==='latency'? cur+"ms" : cur.toLocaleString(); if(p<1) requestAnimationFrame(step); };
+          requestAnimationFrame(step); io.unobserve(el);
+        }
+      })
+    },{threshold:.4});
+    counters.forEach(c=>{ const el = document.getElementById(c.id); el.dataset.to=c.to; el.dataset.format=c.id; io.observe(el); });
 
-  return (
-    <div className="relative min-h-screen overflow-hidden bg-black text-white">
-      {/* Background grid */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.06)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.06)_1px,transparent_1px)] bg-[size:40px_40px]"
-      />
+    // --- Playground Parallax ---
+    const pg = document.getElementById('playground');
+    const pb1 = document.getElementById('pb1');
+    const pb2 = document.getElementById('pb2');
+    const pb3 = document.getElementById('pb3');
+    pg.addEventListener('mousemove', (e)=>{
+      const r = pg.getBoundingClientRect();
+      const x = (e.clientX - r.left)/r.width - 0.5;
+      const y = (e.clientY - r.top)/r.height - 0.5;
+      pb1.style.transform = `translate(${x*60}px, ${y*60}px)`;
+      pb2.style.transform = `translate(${-x*90}px, ${-y*50}px)`;
+      pb3.style.transform = `translate(${x*40}px, ${-y*70}px)`;
+    });
 
-      {/* Animated gradient orbs */}
-      <div aria-hidden className="absolute inset-0 -z-10">
-        <GradientOrb size={420} hue={210} saturation={92} lightness={60} initialX={-120} initialY={-100} duration={14} />
-        <GradientOrb size={360} hue={280} saturation={92} lightness={64} initialX={160} initialY={-40} duration={18} />
-        <GradientOrb size={500} hue={160} saturation={90} lightness={55} initialX={-40} initialY={160} duration={20} />
-        <GradientOrb size={460} hue={330} saturation={82} lightness={62} initialX={220} initialY={200} duration={22} />
-      </div>
+    // --- FAQ accordion ---
+    document.querySelectorAll('.faq-item').forEach(item=>{
+      item.querySelector('.faq-q').addEventListener('click',()=>{
+        item.classList.toggle('open');
+      })
+    })
 
-      {/* Top nav */}
-      <header className="sticky top-0 z-20 backdrop-blur supports-[backdrop-filter]:bg-black/40">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="h-7 w-7 rounded-md bg-gradient-to-tr from-indigo-400 via-fuchsia-400 to-cyan-400" />
-            <span className="text-lg font-semibold tracking-wide">Buxo</span>
-            <Badge className="ml-2 bg-white/10 text-white hover:bg-white/20">Alpha</Badge>
-          </div>
-          <nav className="hidden items-center gap-6 text-sm text-zinc-300 md:flex">
-            <a href="#features" className="transition hover:text-white">Features</a>
-            <a href="#runtime" className="transition hover:text-white">Runtime</a>
-            <a href="#pricing" className="transition hover:text-white">Pricing</a>
-            <a href="#faq" className="transition hover:text-white">FAQ</a>
-          </nav>
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" className="text-zinc-300 hover:bg-white/10 hover:text-white">
-              <Github className="mr-2 h-4 w-4" /> GitHub
-            </Button>
-            <Button className="bg-white text-black hover:bg-zinc-200">
-              Launch App <ArrowRight className="ml-2 h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-        <div className="h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-      </header>
-
-      {/* Hero */}
-      <section className="relative mx-auto max-w-7xl px-6 py-20 md:py-28">
-        <div className="mx-auto max-w-3xl text-center">
-          <div className="mx-auto inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-zinc-300">
-            <Sparkles className="h-3.5 w-3.5" />
-            Introducing a faster way to ship
-          </div>
-          <h1 className="mt-6 text-4xl font-semibold tracking-tight md:text-6xl">
-            Build dynamic experiences on a <span className="bg-gradient-to-r from-fuchsia-400 via-indigo-400 to-cyan-400 bg-clip-text text-transparent">black‑tech canvas</span>
-          </h1>
-          <p className="mx-auto mt-5 max-w-2xl text-zinc-300">
-            Buxo is a reactive runtime and UI toolkit for crafting real‑time, GPU‑powered web apps. Animated, composable, and secure by design.
-          </p>
-          <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Button size="lg" className="w-full bg-white text-black hover:bg-zinc-200 sm:w-auto">
-              Get Started <Rocket className="ml-2 h-4 w-4" />
-            </Button>
-            <Button size="lg" variant="outline" className="w-full border-white/20 bg-white/5 text-white hover:bg-white/10 sm:w-auto">
-              Contact Sales <Mail className="ml-2 h-4 w-4" />
-            </Button>
-          </div>
-          <Typewriter
-            lines={[
-              "// Install",
-              "npm i buxo --save",
-              "",
-              "// Hello world runtime",
-              "import { start, orb, animate } from 'buxo'",
-              "const app = start('#app')",
-              "const dot = orb({ hue: 280, size: 64 })",
-              "animate(dot, { x: [0, 160, -120, 0], y: [0, -60, 80, 0] })",
-            ]}
-          />
-        </div>
-
-        {/* Live stats */}
-        <div className="mx-auto mt-12 grid max-w-3xl grid-cols-3 gap-3 text-center text-sm text-zinc-300 sm:gap-6">
-          <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-            <div className="text-2xl font-semibold text-white">{users.toLocaleString()}+</div>
-            Early users
-          </div>
-          <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-            <div className="text-2xl font-semibold text-white">{latency}ms</div>
-            Median latency
-          </div>
-          <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-            <div className="text-2xl font-semibold text-white">{apiCalls.toLocaleString()}</div>
-            API calls today
-          </div>
-        </div>
-      </section>
-
-      {/* Features */}
-      <section id="features" className="relative z-10 mx-auto max-w-7xl px-6 pb-20">
-        <div className="grid gap-6 md:grid-cols-3">
-          <Card className="border-white/10 bg-gradient-to-b from-white/5 to-transparent">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-white">
-                <Zap className="h-5 w-5" /> Real‑time Motion
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="text-zinc-300">
-              Native Framer Motion hooks and GPU‑accelerated transforms for liquid interactions.
-            </CardContent>
-          </Card>
-          <Card className="border-white/10 bg-gradient-to-b from-white/5 to-transparent">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-white">
-                <Shield className="h-5 w-5" /> Secure by Design
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="text-zinc-300">
-              Built‑in auth, signed actions, and per‑component isolation keep your app locked down.
-            </CardContent>
-          </Card>
-          <Card className="border-white/10 bg-gradient-to-b from-white/5 to-transparent">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-white">
-                <Gauge className="h-5 w-5" /> Ultra‑Low Latency
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="text-zinc-300">
-              Data streams with <code className="rounded bg-white/10 px-1">Sub‑100ms</code> interactivity at global scale.
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="mt-10 grid items-stretch gap-6 md:grid-cols-2">
-          <Card className="border-white/10 bg-white/5">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-white">
-                <Layers className="h-5 w-5" /> Composable UI Primitives
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="text-zinc-300">
-              Drop‑in building blocks for dashboards, canvases, and control panels.
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Badge className="bg-white/10 text-white">Canvas</Badge>
-                <Badge className="bg-white/10 text-white">Signals</Badge>
-                <Badge className="bg-white/10 text-white">Workers</Badge>
-                <Badge className="bg-white/10 text-white">3D</Badge>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="border-white/10 bg-white/5">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-white">
-                <Cpu className="h-5 w-5" /> Edge‑Ready Runtime
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="text-zinc-300">
-              Ship to serverless, workers, or your bare metal with the same DX. No config.
-              <div className="mt-4 rounded-lg border border-white/10 bg-black/40 p-4 font-mono text-xs text-zinc-200">
-                npx buxo deploy --target=edge --regions=global
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </section>
-
-      {/* Runtime playground */}
-      <section id="runtime" className="relative mx-auto max-w-7xl px-6 pb-20">
-        <div className="grid gap-6 lg:grid-cols-2">
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-            <div className="flex items-center gap-2 text-sm text-zinc-300">
-              <TerminalSquare className="h-4 w-4" /> Live Playground
-            </div>
-            <div className="mt-4 h-64 w-full rounded-xl border border-white/10 bg-black/60 p-4">
-              {/* Simple mouse‑parallax demo */}
-              <ParallaxDemo />
-            </div>
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-            <h3 className="text-xl font-semibold text-white">Join the Waitlist</h3>
-            <p className="mt-2 text-zinc-300">Be first to try Buxo in private beta.</p>
-            <div className="mt-4 flex gap-2">
-              <Input placeholder="you@company.com" className="border-white/20 bg-black/40 text-white placeholder:text-zinc-500" />
-              <Button className="bg-white text-black hover:bg-zinc-200">Notify me</Button>
-            </div>
-            <p className="mt-3 text-xs text-zinc-500">No spam. Unsubscribe any time.</p>
-          </div>
-        </div>
-      </section>
-
-      {/* Pricing */}
-      <section id="pricing" className="relative mx-auto max-w-7xl px-6 pb-24">
-        <div className="grid gap-6 md:grid-cols-3">
-          <PriceCard title="Hacker" price="$0" subtitle="For tinkering and demos" bullets={["1 project", "Free tier runtime", "Community support"]} cta="Start Free" />
-          <PriceCard title="Startup" price="$29" subtitle="For small teams" highlight bullets={["Unlimited projects", "Edge runtime", "Email support"]} cta="Start Trial" />
-          <PriceCard title="Enterprise" price="Custom" subtitle="For scale" bullets={["SLA & SSO", "Private regions", "Dedicated support"]} cta="Contact Us" />
-        </div>
-      </section>
-
-      {/* FAQ */}
-      <section id="faq" className="relative mx-auto max-w-5xl px-6 pb-24">
-        <h3 className="text-2xl font-semibold">FAQ</h3>
-        <div className="mt-6 grid gap-4 md:grid-cols-2">
-          <Faq q="What is Buxo?" a="A dynamic web runtime + UI kit focused on black‑tech aesthetics, motion, and speed." />
-          <Faq q="Can I self host?" a="Yes, Buxo targets edge workers, serverless, or bare metal with the same CLI." />
-          <Faq q="Is there an SDK?" a="TypeScript‑first SDK with React bindings and vanilla APIs." />
-          <Faq q="Do you support 3D?" a="Experimental WebGPU + Three.js bridges are available in beta." />
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="relative border-t border-white/10 bg-black/60">
-        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-6 py-10 md:flex-row">
-          <div className="flex items-center gap-3 text-zinc-400">
-            <div className="h-5 w-5 rounded-sm bg-gradient-to-tr from-indigo-400 via-fuchsia-400 to-cyan-400" />
-            <span>Buxo</span>
-            <span className="text-zinc-600">•</span>
-            <span className="text-zinc-500">© {new Date().getFullYear()} All rights reserved.</span>
-          </div>
-          <div className="flex items-center gap-2 text-sm text-zinc-400">
-            <a className="hover:text-white" href="#">Privacy</a>
-            <a className="hover:text-white" href="#">Terms</a>
-            <a className="hover:text-white" href="#">Security</a>
-          </div>
-        </div>
-      </footer>
-    </div>
-  );
-}
-
-function PriceCard({ title, price, subtitle, bullets = [], cta = "Choose Plan", highlight = false }) {
-  return (
-    <Card className={`relative overflow-hidden border-white/10 ${highlight ? "bg-gradient-to-b from-white/10 to-white/[0.04] shadow-[0_0_0_1px_rgba(255,255,255,0.08)]" : "bg-white/5"}`}>
-      {highlight && (
-        <div className="absolute right-3 top-3 text-[10px]">
-          <Badge className="bg-white text-black">Popular</Badge>
-        </div>
-      )}
-      <CardHeader>
-        <CardTitle className="text-white">
-          {title}
-          <div className="mt-1 text-sm font-normal text-zinc-400">{subtitle}</div>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="text-zinc-300">
-        <div className="mb-4 text-4xl font-semibold text-white">{price}<span className="ml-1 text-sm font-normal text-zinc-400">/mo</span></div>
-        <ul className="mb-6 space-y-2">
-          {bullets.map((b: string, i: number) => (
-            <li key={i} className="flex items-center gap-2"><Sparkles className="h-4 w-4" /> {b}</li>
-          ))}
-        </ul>
-        <Button className="w-full bg-white text-black hover:bg-zinc-200">{cta}</Button>
-      </CardContent>
-    </Card>
-  );
-}
-
-function Faq({ q, a }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-      <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between text-left">
-        <span className="text-white">{q}</span>
-        <motion.span animate={{ rotate: open ? 45 : 0 }} className="text-xl text-zinc-400">+</motion.span>
-      </button>
-      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: open ? "auto" : 0, opacity: open ? 1 : 0 }} className="overflow-hidden pt-2 text-zinc-300">
-        {a}
-      </motion.div>
-    </div>
-  );
-}
-
-function ParallaxDemo() {
-  const [pos, setPos] = useState({ x: 0, y: 0 });
-  const handle = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width - 0.5;
-    const y = (e.clientY - rect.top) / rect.height - 0.5;
-    setPos({ x, y });
-  };
-  return (
-    <div onMouseMove={handle} className="relative flex h-full w-full items-center justify-center overflow-hidden">
-      <motion.div
-        className="absolute h-40 w-40 rounded-full"
-        style={{ background: "radial-gradient(closest-side, #9b5cff, transparent)", filter: "blur(20px)" }}
-        animate={{ x: pos.x * 60, y: pos.y * 60 }}
-        transition={{ type: "spring", stiffness: 60, damping: 12 }}
-      />
-      <motion.div
-        className="absolute h-32 w-32 rounded-full"
-        style={{ background: "radial-gradient(closest-side, #00e0ff, transparent)", filter: "blur(22px)" }}
-        animate={{ x: pos.x * -90, y: pos.y * -50 }}
-        transition={{ type: "spring", stiffness: 60, damping: 12 }}
-      />
-      <motion.div
-        className="absolute h-48 w-48 rounded-full"
-        style={{ background: "radial-gradient(closest-side, #00ff94, transparent)", filter: "blur(24px)" }}
-        animate={{ x: pos.x * 40, y: pos.y * -70 }}
-        transition={{ type: "spring", stiffness: 60, damping: 12 }}
-      />
-      <div className="relative z-10 rounded-lg border border-white/10 bg-black/60 px-4 py-2 font-mono text-xs text-zinc-300">
-        Move your mouse — the blobs follow.
-      </div>
-    </div>
-  );
-}
+    // Year
+    document.getElementById('year').textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>
