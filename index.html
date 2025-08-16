@@ -1,196 +1,394 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>BUXO</title>
-  <link rel="icon" type="image/x-icon" href="https://i.ibb.co/sdXkffqs/Bullux4.png" />
-  <link rel="stylesheet" href="style.css?newcache0x" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.js"></script>
-  <script src="https://unpkg.com/@solana/wallet-adapter-base/lib/index.iife.js"></script>
-  <script src="https://unpkg.com/@solana/wallet-adapter-wallets/lib/index.iife.js"></script>
-  <script src="https://unpkg.com/@solana/spl-token@0.3.8/lib/index.iife.min.js"></script>
-</head>
-<body class="dark-mode">
-  <div class="dynamic-bg"></div>
-  
-  <div class="announcement-banner">
-  </div>
+import React, { useEffect, useMemo, useState } from "react";
+import { motion, useMotionValue, useSpring } from "framer-motion";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { ArrowRight, Zap, Shield, Sparkles, Gauge, Rocket, TerminalSquare, Cpu, Layers, Github, Mail } from "lucide-react";
 
-  <nav>
-    <a href="/" class="logo">
-      <img src="https://i.ibb.co/sdXkffqs/Bullux4.png" alt="Logo" border="0" />
-    </a>
-    <div class="nav-links">
-      <div class="social-links">
-<div style="display: flex; flex-wrap:wrap; align-items: center; justify-content: center;"><a href="https://x.com/buxohq?s=21" target="_blank" rel="noopener noreferrer" style="text-decoration:none;border:0;width:23px;height:23px;padding:0;margin:3px;color:#5C67FF;"><svg class="niftybutton-twitterx" style="display:block;fill:currentColor" data-donate="true" data-tag="twix" data-name="TwitterX" viewBox="0 0 512 512" preserveAspectRatio="xMidYMid meet"><title>Twitter X social icon</title>
-<path d="M 304.757 216.824 L 495.394 0 L 450.238 0 L 284.636 188.227 L 152.475 0 L 0 0 L 199.902 284.656 L 0 512 L 45.16 512 L 219.923 313.186 L 359.525 512 L 512 512 M 61.456 33.322 L 130.835 33.322 L 450.203 480.317 L 380.811 480.317 "></path>
-</svg></a><a href="https://t.me/BoxuHQ" target="_blank" rel="noopener noreferrer" style="text-decoration:none;border:0;width:23px;height:23px;padding:0;margin:3px;color:#5C67FF;"><svg class="niftybutton-telegram" style="display:block;fill:currentColor" data-donate="true" data-tag="tel" data-name="Telegram" viewBox="0 0 512 512" preserveAspectRatio="xMidYMid meet"><title>Telegram social icon</title>
-<path d="M 200.894531 323.863281 L 192.425781 442.988281 C 204.542969 442.988281 209.792969 437.78125 216.085938 431.53125 L 272.894531 377.238281 L 390.613281 463.445312 C 412.203125 475.476562 427.414062 469.140625 433.238281 443.585938 L 510.507812 81.515625 L 510.527344 81.492188 C 517.375 49.578125 498.988281 37.097656 477.953125 44.929688 L 23.765625 218.816406 C -7.230469 230.847656 -6.761719 248.128906 18.496094 255.957031 L 134.613281 292.074219 L 404.332031 123.308594 C 417.023438 114.902344 428.566406 119.550781 419.070312 127.957031 Z M 200.894531 323.863281 "></path>
-</svg></a></div>
+// Utility: random within range
+const rand = (min: number, max: number) => Math.random() * (max - min) + min;
+
+// Animated gradient orb component
+function GradientOrb({ size = 320, hue = 260, saturation = 80, lightness = 60, initialX = 0, initialY = 0, duration = 16 }) {
+  const x = useMotionValue(initialX);
+  const y = useMotionValue(initialY);
+  const xs = useSpring(x, { stiffness: 30, damping: 20 });
+  const ys = useSpring(y, { stiffness: 30, damping: 20 });
+
+  useEffect(() => {
+    let mounted = true;
+    const loop = () => {
+      if (!mounted) return;
+      x.set(rand(-40, 40));
+      y.set(rand(-40, 40));
+      setTimeout(loop, rand(duration * 500, duration * 1200));
+    };
+    loop();
+    return () => {
+      mounted = false;
+    };
+  }, [duration, x, y]);
+
+  const style: React.CSSProperties = {
+    width: size,
+    height: size,
+    filter: "blur(40px)",
+    background: `radial-gradient(closest-side, hsl(${hue} ${saturation}% ${lightness}%), transparent 70%)`,
+  };
+
+  return (
+    <motion.div
+      aria-hidden
+      className="pointer-events-none absolute rounded-full mix-blend-screen opacity-30"
+      style={{ ...style, x: xs, y: ys }}
+    />
+  );
+}
+
+// Tiny helper to simulate a growing stat
+function useCountingStat(to: number, ms = 2600) {
+  const [val, setVal] = useState(0);
+  useEffect(() => {
+    const start = performance.now();
+    let raf = 0;
+    const step = (t: number) => {
+      const p = Math.min(1, (t - start) / ms);
+      setVal(Math.floor(to * (1 - Math.pow(1 - p, 3))));
+      if (p < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [to, ms]);
+  return val;
+}
+
+// Typewriter effect for the hero code block
+function Typewriter({ lines, speed = 28 }) {
+  const [text, setText] = useState("");
+  const flat = useMemo(() => lines.join("\n"), [lines]);
+  useEffect(() => {
+    let i = 0;
+    const id = setInterval(() => {
+      setText(flat.slice(0, i++));
+      if (i > flat.length) {
+        clearInterval(id);
+      }
+    }, speed);
+    return () => clearInterval(id);
+  }, [flat, speed]);
+  return (
+    <pre className="mt-6 w-full max-w-2xl overflow-hidden rounded-xl border border-white/10 bg-black/60 p-5 font-mono text-sm text-zinc-200 shadow-[0_0_0_1px_rgba(255,255,255,0.04)]">
+      {text}
+      <span className="animate-pulse">█</span>
+    </pre>
+  );
+}
+
+export default function Buxo() {
+  const users = useCountingStat(12400);
+  const latency = useCountingStat(23);
+  const apiCalls = useCountingStat(820000);
+
+  return (
+    <div className="relative min-h-screen overflow-hidden bg-black text-white">
+      {/* Background grid */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.06)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.06)_1px,transparent_1px)] bg-[size:40px_40px]"
+      />
+
+      {/* Animated gradient orbs */}
+      <div aria-hidden className="absolute inset-0 -z-10">
+        <GradientOrb size={420} hue={210} saturation={92} lightness={60} initialX={-120} initialY={-100} duration={14} />
+        <GradientOrb size={360} hue={280} saturation={92} lightness={64} initialX={160} initialY={-40} duration={18} />
+        <GradientOrb size={500} hue={160} saturation={90} lightness={55} initialX={-40} initialY={160} duration={20} />
+        <GradientOrb size={460} hue={330} saturation={82} lightness={62} initialX={220} initialY={200} duration={22} />
       </div>
-      <div class="network-selector">
-        <div class="status-dot"></div>
-        <select id="network-select">
-          <option value="mainnet">Mainnet</option>
-          <option value="devnet">Devnet</option>
-        </select>
-      </div>
-      <div class="wallet-info hidden" id="wallet-info">
-        <span class="wallet-address" id="wallet-address"></span>
-        <span class="wallet-balance" id="wallet-balance">0.0000 SOL</span>
-      </div>
-      <button class="connect-wallet" id="wallet-connect">
-        <i class="fas fa-plug"></i>
-        <span>Connect Wallet</span>
+
+      {/* Top nav */}
+      <header className="sticky top-0 z-20 backdrop-blur supports-[backdrop-filter]:bg-black/40">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+          <div className="flex items-center gap-3">
+            <div className="h-7 w-7 rounded-md bg-gradient-to-tr from-indigo-400 via-fuchsia-400 to-cyan-400" />
+            <span className="text-lg font-semibold tracking-wide">Buxo</span>
+            <Badge className="ml-2 bg-white/10 text-white hover:bg-white/20">Alpha</Badge>
+          </div>
+          <nav className="hidden items-center gap-6 text-sm text-zinc-300 md:flex">
+            <a href="#features" className="transition hover:text-white">Features</a>
+            <a href="#runtime" className="transition hover:text-white">Runtime</a>
+            <a href="#pricing" className="transition hover:text-white">Pricing</a>
+            <a href="#faq" className="transition hover:text-white">FAQ</a>
+          </nav>
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" className="text-zinc-300 hover:bg-white/10 hover:text-white">
+              <Github className="mr-2 h-4 w-4" /> GitHub
+            </Button>
+            <Button className="bg-white text-black hover:bg-zinc-200">
+              Launch App <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+        <div className="h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+      </header>
+
+      {/* Hero */}
+      <section className="relative mx-auto max-w-7xl px-6 py-20 md:py-28">
+        <div className="mx-auto max-w-3xl text-center">
+          <div className="mx-auto inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-zinc-300">
+            <Sparkles className="h-3.5 w-3.5" />
+            Introducing a faster way to ship
+          </div>
+          <h1 className="mt-6 text-4xl font-semibold tracking-tight md:text-6xl">
+            Build dynamic experiences on a <span className="bg-gradient-to-r from-fuchsia-400 via-indigo-400 to-cyan-400 bg-clip-text text-transparent">black‑tech canvas</span>
+          </h1>
+          <p className="mx-auto mt-5 max-w-2xl text-zinc-300">
+            Buxo is a reactive runtime and UI toolkit for crafting real‑time, GPU‑powered web apps. Animated, composable, and secure by design.
+          </p>
+          <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <Button size="lg" className="w-full bg-white text-black hover:bg-zinc-200 sm:w-auto">
+              Get Started <Rocket className="ml-2 h-4 w-4" />
+            </Button>
+            <Button size="lg" variant="outline" className="w-full border-white/20 bg-white/5 text-white hover:bg-white/10 sm:w-auto">
+              Contact Sales <Mail className="ml-2 h-4 w-4" />
+            </Button>
+          </div>
+          <Typewriter
+            lines={[
+              "// Install",
+              "npm i buxo --save",
+              "",
+              "// Hello world runtime",
+              "import { start, orb, animate } from 'buxo'",
+              "const app = start('#app')",
+              "const dot = orb({ hue: 280, size: 64 })",
+              "animate(dot, { x: [0, 160, -120, 0], y: [0, -60, 80, 0] })",
+            ]}
+          />
+        </div>
+
+        {/* Live stats */}
+        <div className="mx-auto mt-12 grid max-w-3xl grid-cols-3 gap-3 text-center text-sm text-zinc-300 sm:gap-6">
+          <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+            <div className="text-2xl font-semibold text-white">{users.toLocaleString()}+</div>
+            Early users
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+            <div className="text-2xl font-semibold text-white">{latency}ms</div>
+            Median latency
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+            <div className="text-2xl font-semibold text-white">{apiCalls.toLocaleString()}</div>
+            API calls today
+          </div>
+        </div>
+      </section>
+
+      {/* Features */}
+      <section id="features" className="relative z-10 mx-auto max-w-7xl px-6 pb-20">
+        <div className="grid gap-6 md:grid-cols-3">
+          <Card className="border-white/10 bg-gradient-to-b from-white/5 to-transparent">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-white">
+                <Zap className="h-5 w-5" /> Real‑time Motion
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-zinc-300">
+              Native Framer Motion hooks and GPU‑accelerated transforms for liquid interactions.
+            </CardContent>
+          </Card>
+          <Card className="border-white/10 bg-gradient-to-b from-white/5 to-transparent">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-white">
+                <Shield className="h-5 w-5" /> Secure by Design
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-zinc-300">
+              Built‑in auth, signed actions, and per‑component isolation keep your app locked down.
+            </CardContent>
+          </Card>
+          <Card className="border-white/10 bg-gradient-to-b from-white/5 to-transparent">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-white">
+                <Gauge className="h-5 w-5" /> Ultra‑Low Latency
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-zinc-300">
+              Data streams with <code className="rounded bg-white/10 px-1">Sub‑100ms</code> interactivity at global scale.
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="mt-10 grid items-stretch gap-6 md:grid-cols-2">
+          <Card className="border-white/10 bg-white/5">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-white">
+                <Layers className="h-5 w-5" /> Composable UI Primitives
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-zinc-300">
+              Drop‑in building blocks for dashboards, canvases, and control panels.
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Badge className="bg-white/10 text-white">Canvas</Badge>
+                <Badge className="bg-white/10 text-white">Signals</Badge>
+                <Badge className="bg-white/10 text-white">Workers</Badge>
+                <Badge className="bg-white/10 text-white">3D</Badge>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border-white/10 bg-white/5">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-white">
+                <Cpu className="h-5 w-5" /> Edge‑Ready Runtime
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-zinc-300">
+              Ship to serverless, workers, or your bare metal with the same DX. No config.
+              <div className="mt-4 rounded-lg border border-white/10 bg-black/40 p-4 font-mono text-xs text-zinc-200">
+                npx buxo deploy --target=edge --regions=global
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
+      {/* Runtime playground */}
+      <section id="runtime" className="relative mx-auto max-w-7xl px-6 pb-20">
+        <div className="grid gap-6 lg:grid-cols-2">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
+            <div className="flex items-center gap-2 text-sm text-zinc-300">
+              <TerminalSquare className="h-4 w-4" /> Live Playground
+            </div>
+            <div className="mt-4 h-64 w-full rounded-xl border border-white/10 bg-black/60 p-4">
+              {/* Simple mouse‑parallax demo */}
+              <ParallaxDemo />
+            </div>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
+            <h3 className="text-xl font-semibold text-white">Join the Waitlist</h3>
+            <p className="mt-2 text-zinc-300">Be first to try Buxo in private beta.</p>
+            <div className="mt-4 flex gap-2">
+              <Input placeholder="you@company.com" className="border-white/20 bg-black/40 text-white placeholder:text-zinc-500" />
+              <Button className="bg-white text-black hover:bg-zinc-200">Notify me</Button>
+            </div>
+            <p className="mt-3 text-xs text-zinc-500">No spam. Unsubscribe any time.</p>
+          </div>
+        </div>
+      </section>
+
+      {/* Pricing */}
+      <section id="pricing" className="relative mx-auto max-w-7xl px-6 pb-24">
+        <div className="grid gap-6 md:grid-cols-3">
+          <PriceCard title="Hacker" price="$0" subtitle="For tinkering and demos" bullets={["1 project", "Free tier runtime", "Community support"]} cta="Start Free" />
+          <PriceCard title="Startup" price="$29" subtitle="For small teams" highlight bullets={["Unlimited projects", "Edge runtime", "Email support"]} cta="Start Trial" />
+          <PriceCard title="Enterprise" price="Custom" subtitle="For scale" bullets={["SLA & SSO", "Private regions", "Dedicated support"]} cta="Contact Us" />
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section id="faq" className="relative mx-auto max-w-5xl px-6 pb-24">
+        <h3 className="text-2xl font-semibold">FAQ</h3>
+        <div className="mt-6 grid gap-4 md:grid-cols-2">
+          <Faq q="What is Buxo?" a="A dynamic web runtime + UI kit focused on black‑tech aesthetics, motion, and speed." />
+          <Faq q="Can I self host?" a="Yes, Buxo targets edge workers, serverless, or bare metal with the same CLI." />
+          <Faq q="Is there an SDK?" a="TypeScript‑first SDK with React bindings and vanilla APIs." />
+          <Faq q="Do you support 3D?" a="Experimental WebGPU + Three.js bridges are available in beta." />
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="relative border-t border-white/10 bg-black/60">
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-6 py-10 md:flex-row">
+          <div className="flex items-center gap-3 text-zinc-400">
+            <div className="h-5 w-5 rounded-sm bg-gradient-to-tr from-indigo-400 via-fuchsia-400 to-cyan-400" />
+            <span>Buxo</span>
+            <span className="text-zinc-600">•</span>
+            <span className="text-zinc-500">© {new Date().getFullYear()} All rights reserved.</span>
+          </div>
+          <div className="flex items-center gap-2 text-sm text-zinc-400">
+            <a className="hover:text-white" href="#">Privacy</a>
+            <a className="hover:text-white" href="#">Terms</a>
+            <a className="hover:text-white" href="#">Security</a>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+function PriceCard({ title, price, subtitle, bullets = [], cta = "Choose Plan", highlight = false }) {
+  return (
+    <Card className={`relative overflow-hidden border-white/10 ${highlight ? "bg-gradient-to-b from-white/10 to-white/[0.04] shadow-[0_0_0_1px_rgba(255,255,255,0.08)]" : "bg-white/5"}`}>
+      {highlight && (
+        <div className="absolute right-3 top-3 text-[10px]">
+          <Badge className="bg-white text-black">Popular</Badge>
+        </div>
+      )}
+      <CardHeader>
+        <CardTitle className="text-white">
+          {title}
+          <div className="mt-1 text-sm font-normal text-zinc-400">{subtitle}</div>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="text-zinc-300">
+        <div className="mb-4 text-4xl font-semibold text-white">{price}<span className="ml-1 text-sm font-normal text-zinc-400">/mo</span></div>
+        <ul className="mb-6 space-y-2">
+          {bullets.map((b: string, i: number) => (
+            <li key={i} className="flex items-center gap-2"><Sparkles className="h-4 w-4" /> {b}</li>
+          ))}
+        </ul>
+        <Button className="w-full bg-white text-black hover:bg-zinc-200">{cta}</Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+function Faq({ q, a }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+      <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between text-left">
+        <span className="text-white">{q}</span>
+        <motion.span animate={{ rotate: open ? 45 : 0 }} className="text-xl text-zinc-400">+</motion.span>
       </button>
+      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: open ? "auto" : 0, opacity: open ? 1 : 0 }} className="overflow-hidden pt-2 text-zinc-300">
+        {a}
+      </motion.div>
     </div>
-  </nav>
+  );
+}
 
-  <main>
-    <section id="pre-connect" class="active">
-      <div class="hero-content">
-        <div class="hero-badge">
-          <span class="pulse"></span>
-          <span>Live on Mainnet</span>
-        </div>
-        <h1>Reclaim Your <span class="gradient-text">Solana</span></h1>
-        <p class="hero-subtitle">Find and close abandoned accounts to reclaim your SOL.</p>
-        <div class="connect-prompt">
-          <button class="large-connect-btn" id="hero-connect">
-            <i class="fas fa-wallet"></i>
-            Connect Wallet to Start
-          </button>
-        </div>
-      </div>
-    </section>
-
-    <section id="post-connect" class="hidden">
-      <div class="dashboard-container">
-        <div class="abandoned-accounts">
-          <div class="accounts-header">
-            <h2>Abandoned Accounts</h2>
-            <button class="refresh-btn" id="refresh-accounts">
-              <i class="fas fa-sync-alt"></i>
-            </button>
-          </div>
-          <div id="abandoned-accounts" class="accounts-list">
-          </div>
-          <div class="claim-all-container">
-            <button class="claim-all-button" id="claim-all">
-              <i class="fas fa-hand-holding-usd"></i>
-              Claim All (<span id="total-amount">0</span> SOL)
-            </button>
-          </div>
-        </div>
-
-        <div class="referral-section">
-          <div class="referral-header">
-            <h2>Referral Program (NW)</h2>
-          </div>
-          <div class="referral-content">
-            <div class="referral-stats">
-              <div class="stat-card">
-                <div class="stat-label">Total Referrals</div>
-                <div class="stat-value" id="referral-count">0</div>
-              </div>
-              <div class="stat-card">
-                <div class="stat-label">Total Earnings</div>
-                <div class="stat-value" id="referral-earnings">0 SOL</div>
-              </div>
-              <div class="stat-card">
-                <div class="stat-label">Pending Rewards</div>
-                <div class="stat-value" id="pending-rewards">0 SOL</div>
-              </div>
-            </div>
-            
-            <div class="referral-link-container">
-              <div class="referral-link-input">
-                <input type="text" class="referral-link" id="referral-link" readonly>
-                <button class="copy-button" id="copy-referral">
-                  <i class="fas fa-copy"></i>
-                  Copy
-                </button>
-              </div>
-              <p class="referral-info">
-                Share your referral link and earn <strong>35%</strong> of the fees when users claim accounts through your link!
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section id="dashboard" class="dashboard-section hidden">
-      <div class="dashboard-container">
-        <div class="accounts-section">
-          <div class="accounts-header">
-            <h2 class="accounts-title">Abandoned Accounts</h2>
-            <button class="refresh-btn" id="refresh-accounts">
-              <i class="fas fa-sync-alt"></i>
-              Refresh
-            </button>
-          </div>
-          
-          <div id="accounts-list" class="accounts-list">
-          </div>
-          
-          <div id="empty-state" class="empty-state hidden">
-            <i class="fas fa-check-circle"></i>
-            <p>No abandoned accounts found</p>
-          </div>
-        </div>
-      </div>
-    </section>
-  </main>
-
-  <div class="modal-overlay" id="wallet-modal-overlay">
-    <div class="wallet-modal" id="wallet-modal">
-      <div class="wallet-modal-header">
-        <h3 class="wallet-modal-title">Connect Wallet</h3>
-        <button class="close-modal" id="close-modal">
-          <i class="fas fa-times"></i>
-        </button>
-      </div>
-      
-      <div class="wallet-search">
-        <input type="text" id="wallet-search" placeholder="Search wallets...">
-        <i class="fas fa-search"></i>
-      </div>
-      
-      <div class="wallet-options" id="wallet-options">
+function ParallaxDemo() {
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+  const handle = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width - 0.5;
+    const y = (e.clientY - rect.top) / rect.height - 0.5;
+    setPos({ x, y });
+  };
+  return (
+    <div onMouseMove={handle} className="relative flex h-full w-full items-center justify-center overflow-hidden">
+      <motion.div
+        className="absolute h-40 w-40 rounded-full"
+        style={{ background: "radial-gradient(closest-side, #9b5cff, transparent)", filter: "blur(20px)" }}
+        animate={{ x: pos.x * 60, y: pos.y * 60 }}
+        transition={{ type: "spring", stiffness: 60, damping: 12 }}
+      />
+      <motion.div
+        className="absolute h-32 w-32 rounded-full"
+        style={{ background: "radial-gradient(closest-side, #00e0ff, transparent)", filter: "blur(22px)" }}
+        animate={{ x: pos.x * -90, y: pos.y * -50 }}
+        transition={{ type: "spring", stiffness: 60, damping: 12 }}
+      />
+      <motion.div
+        className="absolute h-48 w-48 rounded-full"
+        style={{ background: "radial-gradient(closest-side, #00ff94, transparent)", filter: "blur(24px)" }}
+        animate={{ x: pos.x * 40, y: pos.y * -70 }}
+        transition={{ type: "spring", stiffness: 60, damping: 12 }}
+      />
+      <div className="relative z-10 rounded-lg border border-white/10 bg-black/60 px-4 py-2 font-mono text-xs text-zinc-300">
+        Move your mouse — the blobs follow.
       </div>
     </div>
-  </div>
-
-  <div class="loading-overlay hidden" id="loading-overlay">
-    <div class="loader">
-      <div class="loader-spinner"></div>
-      <p class="loader-message">Processing...</p>
-    </div>
-  </div>
-
-  <div class="toast-container"></div>
-
-  <template id="empty-state-template">
-    <div class="empty-state fade-in">
-      <i class="fas fa-check-circle"></i>
-      <p>No abandoned accounts found</p>
-    </div>
-  </template>
-
-  <template id="wallet-option-template">
-    <div class="wallet-option" data-wallet-id="">
-      <div class="wallet-option-left">
-        <img src="" alt="" onerror="handleImageError(this)">
-        <span class="wallet-option-name"></span>
-      </div>
-      <span class="wallet-status"></span>
-    </div>
-  </template>
-
-  <script src="script.js"></script>
-</body>
-</html>
+  );
+}
